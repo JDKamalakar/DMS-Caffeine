@@ -2,6 +2,8 @@
 
 Keep your screen awake and prevent idle sleep with a single click on your DankBar.
 
+<img src="screenshot.png" width="300" alt="Screenshot">
+
 ## Install
 
 Install this plugin via the plugin manager:
