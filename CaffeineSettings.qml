@@ -2,6 +2,7 @@ import QtQuick
 import qs.Common
 import qs.Widgets
 import qs.Modules.Plugins
+import "../dms-common"
 
 PluginSettings {
     pluginId: "caffeine"
