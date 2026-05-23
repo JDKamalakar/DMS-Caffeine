@@ -6,9 +6,13 @@ Keep your screen awake and prevent idle sleep with a single click on your DankBa
 
 ## Install
 
-Install this plugin via the plugin manager:
+**Required:** This plugin requires [dms-common](https://github.com/hthienloc/dms-common) to be installed.
 
 ```bash
+# 1. Install shared components
+git clone https://github.com/hthienloc/dms-common ~/.config/DankMaterialShell/plugins/dms-common
+
+# 2. Install this plugin
 dms plugins install caffeine
 ```
 
@@ -21,9 +25,6 @@ git clone https://github.com/hthienloc/dms-caffeine ~/.config/DankMaterialShell/
 ## Features
 
 - **One-click Stay Awake**: Click the coffee icon pill to toggle sleep inhibition.
-- **Universal Wayland/X11 Support**: Powered by `systemd-inhibit` for native compatibility across window managers (Niri, Sway, Hyprland, etc.).
-- **Startup Auto-Sync**: Automatically detects if sleep inhibition is active when shell starts.
-- **Status Toasts**: Provides clean notification toasts when toggling screen state.
 
 ## Usage
 
