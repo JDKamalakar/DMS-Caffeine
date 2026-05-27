@@ -2,12 +2,12 @@
   "id": "caffeine",
   "name": "Caffeine",
   "description": "Keep your screen awake and prevent idle sleep with a single click.",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "Loc Huynh",
   "type": "widget",
   "icon": "local_cafe",
   "capabilities": [
-    "dankbar-widget"
+    "control-center"
   ],
   "component": "./CaffeineWidget.qml",
   "settings": "./CaffeineSettings.qml",
