@@ -6,20 +6,14 @@ Keep your screen awake and prevent idle sleep with a single click on your DankBa
 
 ## Install
 
-**Required:** This plugin requires [dms-common](https://github.com/hthienloc/dms-common) to be installed.
-
+Use the DMS CLI:
 ```bash
-# 1. Install shared components
-git clone https://github.com/hthienloc/dms-common ~/.config/DankMaterialShell/plugins/dms-common
-
-# 2. Install this plugin
 dms plugins install caffeine
 ```
 
 Or manually:
-
 ```bash
-git clone https://github.com/hthienloc/dms-caffeine ~/.config/DankMaterialShell/plugins/Caffeine
+git clone https://github.com/hthienloc/dms-caffeine ~/.config/DankMaterialShell/plugins/caffeine
 ```
 
 ## Features
