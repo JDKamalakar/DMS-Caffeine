@@ -69,13 +69,13 @@ PluginComponent {
 
     // Control Center Integration
     ccWidgetIcon: "local_cafe"
-    ccWidgetPrimaryText: "Caffeine"
+    ccWidgetPrimaryText: I18n.tr("Caffeine")
     ccWidgetSecondaryText: {
-        if (!caffeineActive) return "Inactive"
-        if (selectedDuration === "infinity" || selectedDuration === "undefined" || !selectedDuration) return "Indefinite"
-        if (timeLeft <= 0) return "Active"
+        if (!caffeineActive) return I18n.tr("Inactive")
+        if (selectedDuration === "infinity" || selectedDuration === "undefined" || !selectedDuration) return I18n.tr("Indefinite")
+        if (timeLeft <= 0) return I18n.tr("Active")
         const mins = Math.ceil(timeLeft / 60)
-        return mins + "m remaining"
+        return mins + I18n.tr("m remaining")
     }
     ccWidgetIsActive: caffeineActive
     ccDetailHeight: {
@@ -124,16 +124,16 @@ PluginComponent {
     }
 
     function formatDurationLabel(dur) {
-        if (dur === "infinity") return "indefinitely";
+        if (dur === "infinity") return I18n.tr("indefinitely");
         const secs = parseInt(dur);
         if (isNaN(secs) || secs <= 0) return dur;
         const mins = secs / 60;
         if (mins < 60) {
-            return mins + " minute" + (mins === 1 ? "" : "s");
+            return mins + " " + I18n.tr("minutes");
         }
         const hrs = mins / 60;
-        if (hrs === 1) return "1 hour";
-        return hrs.toFixed(1).replace(".0", "") + " hours";
+        if (hrs === 1) return I18n.tr("1 hour");
+        return hrs.toFixed(1).replace(".0", "") + " " + I18n.tr("hours");
     }
 
     function changeDuration(newDuration) {
@@ -179,7 +179,7 @@ PluginComponent {
             }
 
             if (showToasts) {
-                ToastService?.showSuccess("Duration updated: stay awake for " + formatDurationLabel(newDuration) + ".")
+                ToastService?.showSuccess(I18n.tr("Duration updated: stay awake for ") + formatDurationLabel(newDuration) + ".")
             }
         }
     }
@@ -198,7 +198,7 @@ PluginComponent {
             }
             Proc.runCommand("deactivate-caffeine", ["pkill", "-f", "DMS Caffeine"], function(output, exitCode) {
                 if (showToasts) {
-                    ToastService?.showInfo("Screen sleep is now allowed.")
+                    ToastService?.showInfo(I18n.tr("Screen sleep is now allowed."))
                 }
             })
         } else {
@@ -233,7 +233,7 @@ PluginComponent {
             }
             
             if (showToasts) {
-                ToastService?.showSuccess(targetDuration === "infinity" ? "Screen will stay awake." : "Screen will stay awake for " + formatDurationLabel(targetDuration) + ".")
+                ToastService?.showSuccess(targetDuration === "infinity" ? I18n.tr("Screen will stay awake.") : I18n.tr("Screen will stay awake for ") + formatDurationLabel(targetDuration) + ".")
             }
         }
     }
@@ -254,7 +254,7 @@ PluginComponent {
                 spacing: Theme.spacingS
 
                 StyledText {
-                    text: "Keep Awake Duration"
+                    text: I18n.tr("Keep Awake Duration")
                     font.pixelSize: Theme.fontSizeLarge
                     color: Theme.surfaceText
                     font.weight: Font.Medium
