@@ -15,8 +15,6 @@ import qs.Widgets
 SettingsCard {
     id: root
 
-    property string pluginName: ""
-    property string pluginIcon: "extension"
     property string repoUrl: ""
 
     property var _contributors: []
@@ -53,8 +51,8 @@ SettingsCard {
 
     // ── Header ─────────────────────────────────────────────────────────────
     SectionTitle {
-        text: root.pluginName !== "" ? root.pluginName : I18n.tr("About")
-        icon: root.pluginIcon
+        text: I18n.tr("Contributing")
+        icon: "handshake"
     }
 
     // ── GitHub link ─────────────────────────────────────────────────────────

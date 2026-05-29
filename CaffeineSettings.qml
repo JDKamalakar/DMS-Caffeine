@@ -39,8 +39,6 @@ PluginSettings {
     }
 
     PluginAbout {
-        pluginName: "Caffeine"
-        pluginIcon: "coffee"
         repoUrl: "https://github.com/hthienloc/dms-caffeine"
     }
 }
