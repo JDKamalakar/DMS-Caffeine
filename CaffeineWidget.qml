@@ -75,7 +75,7 @@ PluginComponent {
         if (selectedDuration === "infinity" || selectedDuration === "undefined" || !selectedDuration) return I18n.tr("Indefinite")
         if (timeLeft <= 0) return I18n.tr("Active")
         const mins = Math.ceil(timeLeft / 60)
-        return mins + I18n.tr("m remaining")
+        return mins + I18n.tr("m")
     }
     ccWidgetIsActive: caffeineActive
     ccDetailHeight: {
@@ -89,7 +89,7 @@ PluginComponent {
 
     horizontalBarPill: Component {
         Row {
-            spacing: Theme.spacingS
+            spacing: caffeineActive ? Theme.spacingS : 0
             DankIcon {
                 name: "local_cafe"
                 size: Theme.iconSizeSmall
@@ -101,13 +101,14 @@ PluginComponent {
                 color: root.pillColor
                 font.pixelSize: Theme.fontSizeMedium
                 anchors.verticalCenter: parent.verticalCenter
+                visible: caffeineActive
             }
         }
     }
 
     verticalBarPill: Component {
         Column {
-            spacing: Theme.spacingXS
+            spacing: caffeineActive ? Theme.spacingXS : 0
             DankIcon {
                 name: "local_cafe"
                 size: Theme.iconSizeSmall
@@ -119,13 +120,18 @@ PluginComponent {
                 color: root.pillColor
                 font.pixelSize: Theme.fontSizeSmall
                 anchors.horizontalCenter: parent.horizontalCenter
+                visible: caffeineActive
             }
         }
     }
 
-    // Click action: toggle caffeine on/off
+    // Click action: toggle caffeine on/off, or open duration picker if inactive
     pillClickAction: function() {
-        toggleCaffeine()
+        if (caffeineActive) {
+            toggleCaffeine()
+        } else {
+            triggerPopout()
+        }
     }
 
     // Right click: open duration picker popout
