@@ -228,8 +228,15 @@ PluginComponent {
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: {
-                                    popoutScope.currentIndex = index
-                                    root.changeDuration(modelData.value);
+                                    if (popoutScope) popoutScope.currentIndex = index
+                                    if (root.selectedDuration === modelData.value) {
+                                        if (!caffeineActive) {
+                                            root.toggleCaffeine(modelData.value)
+                                        }
+                                        if (popoutScope) closePopout()
+                                    } else {
+                                        root.changeDuration(modelData.value);
+                                    }
                                 }
                             }
 
@@ -462,7 +469,13 @@ PluginComponent {
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: {
-                                    root.changeDuration(modelData.value);
+                                    if (root.selectedDuration === modelData.value) {
+                                        if (!caffeineActive) {
+                                            root.toggleCaffeine(modelData.value)
+                                        }
+                                    } else {
+                                        root.changeDuration(modelData.value);
+                                    }
                                 }
                             }
 
