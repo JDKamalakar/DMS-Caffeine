@@ -125,19 +125,13 @@ PluginComponent {
         }
     }
 
-    // Click action: toggle caffeine on/off, or open duration picker if inactive
-    pillClickAction: function() {
-        if (caffeineActive) {
-            toggleCaffeine()
-        } else {
-            triggerPopout()
-        }
-    }
+    // Click action: toggle caffeine off if active, otherwise open duration picker (via null fallback)
+    pillClickAction: caffeineActive ? function() {
+        toggleCaffeine()
+    } : null
 
-    // Right click: open duration picker popout
-    pillRightClickAction: function() {
-        triggerPopout()
-    }
+    // Right click: open duration picker popout (via null fallback)
+    pillRightClickAction: null
 
     // Popout dimensions
     popoutWidth: 320
