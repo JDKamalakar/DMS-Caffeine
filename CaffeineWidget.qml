@@ -71,10 +71,15 @@ PluginComponent {
     ccWidgetIcon: "local_cafe"
     ccWidgetPrimaryText: I18n.tr("Caffeine")
     ccWidgetSecondaryText: {
-        if (!caffeineActive) return I18n.tr("Inactive")
-        if (selectedDuration === "infinity" || selectedDuration === "undefined" || !selectedDuration) return I18n.tr("Indefinite")
-        if (timeLeft <= 0) return I18n.tr("Active")
-        const mins = Math.ceil(timeLeft / 60)
+        // Explicitly depend on caffeineActive, selectedDuration, and timeLeft
+        const active = root.caffeineActive;
+        const dur = root.selectedDuration;
+        const remaining = root.timeLeft;
+
+        if (!active) return I18n.tr("Inactive")
+        if (dur === "infinity" || dur === "undefined" || !dur) return I18n.tr("Indefinite")
+        if (remaining <= 0) return I18n.tr("Active")
+        const mins = Math.ceil(remaining / 60)
         return mins + I18n.tr("m")
     }
     ccWidgetIsActive: caffeineActive
@@ -396,8 +401,6 @@ PluginComponent {
             }
             Quickshell.execDetached(args);
             
-            caffeineActive = true;
-            
             if (targetDuration !== "infinity") {
                 const durationSecs = parseInt(targetDuration);
                 timeLeft = durationSecs;
@@ -411,6 +414,8 @@ PluginComponent {
                     pluginService.savePluginState(pluginId, "expiration", 0);
                 }
             }
+
+            caffeineActive = true;
             
             if (showToasts) {
                 ToastService?.showSuccess(targetDuration === "infinity" ? I18n.tr("Screen will stay awake.") : I18n.tr("Screen will stay awake for ") + formatDurationLabel(targetDuration) + ".")
