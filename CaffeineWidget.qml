@@ -11,7 +11,7 @@ PluginComponent {
     pluginService: PluginService
 
     // Reactive states
-    property bool caffeineActive: false
+    readonly property bool caffeineActive: globalIsActive.value
     property string selectedDuration: {
         if (pluginData && pluginData.selectedDuration !== undefined && pluginData.selectedDuration !== null && pluginData.selectedDuration !== "undefined" && pluginData.selectedDuration !== "") {
             return pluginData.selectedDuration;
@@ -27,7 +27,19 @@ PluginComponent {
         }
         return "infinity";
     }
-    property int timeLeft: 0
+    readonly property int timeLeft: globalTimeLeft.value
+
+    PluginGlobalVar {
+        id: globalIsActive
+        varName: "isActive"
+        defaultValue: false
+    }
+
+    PluginGlobalVar {
+        id: globalTimeLeft
+        varName: "timeLeft"
+        defaultValue: 0
+    }
 
     // Sync settings
     property bool showToasts: (pluginData.showToasts ?? true)
@@ -280,8 +292,8 @@ PluginComponent {
         repeat: true
         running: false
         onTriggered: {
-            timeLeft--;
-            if (timeLeft <= 0) {
+            globalTimeLeft.set(globalTimeLeft.value - 1);
+            if (globalTimeLeft.value <= 0) {
                 countdownTimer.stop();
                 toggleCaffeine(); // Turn off caffeine
             }
@@ -293,14 +305,14 @@ PluginComponent {
         Proc.runCommand("check-caffeine-active", ["pgrep", "-f", "DMS Caffeine"], function(output, exitCode) {
             const isActive = (exitCode === 0 && output.trim() !== "");
             if (isActive) {
-                caffeineActive = true;
+                globalIsActive.set(true);
                 const expiration = pluginService ? pluginService.loadPluginState(pluginId, "expiration", 0) : 0;
                 if (expiration > Date.now()) {
-                    timeLeft = Math.round((expiration - Date.now()) / 1000);
+                    globalTimeLeft.set(Math.round((expiration - Date.now()) / 1000));
                     countdownTimer.start();
                 }
             } else {
-                caffeineActive = false;
+                globalIsActive.set(false);
                 if (pluginService) {
                     pluginService.savePluginState(pluginId, "expiration", 0);
                 }
@@ -351,7 +363,7 @@ PluginComponent {
             countdownTimer.stop();
             if (newDuration !== "infinity") {
                 const durationSecs = parseInt(newDuration);
-                timeLeft = durationSecs;
+                globalTimeLeft.set(durationSecs);
                 const expiration = Date.now() + durationSecs * 1000;
                 if (pluginService) {
                     pluginService.savePluginState(pluginId, "expiration", expiration);
@@ -374,9 +386,9 @@ PluginComponent {
         if (targetDuration === undefined || targetDuration === null || targetDuration === "undefined" || targetDuration === "") {
             targetDuration = "infinity";
         }
-        if (caffeineActive) {
+        if (globalIsActive.value) {
             // Deactivate
-            caffeineActive = false; // Set synchronously to avoid race conditions
+            globalIsActive.set(false); // Set synchronously to avoid race conditions
             countdownTimer.stop();
             if (pluginService) {
                 pluginService.savePluginState(pluginId, "expiration", 0);
@@ -403,7 +415,7 @@ PluginComponent {
             
             if (targetDuration !== "infinity") {
                 const durationSecs = parseInt(targetDuration);
-                timeLeft = durationSecs;
+                globalTimeLeft.set(durationSecs);
                 const expiration = Date.now() + durationSecs * 1000;
                 if (pluginService) {
                     pluginService.savePluginState(pluginId, "expiration", expiration);
@@ -415,7 +427,7 @@ PluginComponent {
                 }
             }
 
-            caffeineActive = true;
+            globalIsActive.set(true);
             
             if (showToasts) {
                 ToastService?.showSuccess(targetDuration === "infinity" ? I18n.tr("Screen will stay awake.") : I18n.tr("Screen will stay awake for ") + formatDurationLabel(targetDuration) + ".")
