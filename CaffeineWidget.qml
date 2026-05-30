@@ -228,14 +228,13 @@ PluginComponent {
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: {
-                                    if (popoutScope) popoutScope.currentIndex = index
-                                    if (root.selectedDuration === modelData.value) {
-                                        if (!caffeineActive) {
-                                            root.toggleCaffeine(modelData.value)
-                                        }
-                                        if (popoutScope) closePopout()
+                                    if (typeof popoutScope !== 'undefined') popoutScope.currentIndex = index
+                                    const isSelected = String(root.selectedDuration) === String(modelData.value)
+                                    if (isSelected) {
+                                        root.toggleCaffeine(modelData.value)
+                                        if (typeof popoutScope !== 'undefined') closePopout()
                                     } else {
-                                        root.changeDuration(modelData.value);
+                                        root.changeDuration(modelData.value)
                                     }
                                 }
                             }
@@ -469,12 +468,11 @@ PluginComponent {
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: {
-                                    if (root.selectedDuration === modelData.value) {
-                                        if (!caffeineActive) {
-                                            root.toggleCaffeine(modelData.value)
-                                        }
+                                    const isSelected = String(root.selectedDuration) === String(modelData.value)
+                                    if (isSelected) {
+                                        root.toggleCaffeine(modelData.value)
                                     } else {
-                                        root.changeDuration(modelData.value);
+                                        root.changeDuration(modelData.value)
                                     }
                                 }
                             }
