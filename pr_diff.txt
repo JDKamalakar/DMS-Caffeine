@@ -1,0 +1,185 @@
+diff --git a/CaffeineWidget.qml b/CaffeineWidget.qml
+index 7a99cec..d17c320 100644
+--- a/CaffeineWidget.qml
++++ b/CaffeineWidget.qml
+@@ -85,6 +85,180 @@ PluginComponent {
+         return headerHeight + gridHeight + Theme.spacingM * 2;
+     }
+ 
++    readonly property color pillColor: caffeineActive ? Theme.primary : Theme.surfaceText
++
++    horizontalBarPill: Component {
++        Row {
++            spacing: Theme.spacingS
++            DankIcon {
++                name: "local_cafe"
++                size: Theme.iconSizeSmall
++                color: root.pillColor
++                anchors.verticalCenter: parent.verticalCenter
++            }
++            StyledText {
++                text: root.ccWidgetSecondaryText
++                color: root.pillColor
++                font.pixelSize: Theme.fontSizeMedium
++                anchors.verticalCenter: parent.verticalCenter
++            }
++        }
++    }
++
++    verticalBarPill: Component {
++        Column {
++            spacing: Theme.spacingXS
++            DankIcon {
++                name: "local_cafe"
++                size: Theme.iconSizeSmall
++                color: root.pillColor
++                anchors.horizontalCenter: parent.horizontalCenter
++            }
++            StyledText {
++                text: root.ccWidgetSecondaryText
++                color: root.pillColor
++                font.pixelSize: Theme.fontSizeSmall
++                anchors.horizontalCenter: parent.horizontalCenter
++            }
++        }
++    }
++
++    // Click action: toggle caffeine on/off
++    pillClickAction: function() {
++        toggleCaffeine()
++    }
++
++    // Right click: open duration picker popout
++    pillRightClickAction: function() {
++        triggerPopout()
++    }
++
++    // Popout dimensions
++    popoutWidth: 320
++    popoutHeight: 0 // auto from content
++
++    // Popout content: duration selector grid
++    popoutContent: Component {
++        FocusScope {
++            id: popoutScope
++            implicitHeight: contentColumn.implicitHeight + Theme.spacingM * 2
++            property int currentIndex: 0
++
++            // Keyboard navigation
++            Keys.onPressed: function(event) {
++                const cols = 3
++                const count = root.durationOptions.length
++                let idx = popoutScope.currentIndex
++                if (event.key === Qt.Key_Right) {
++                    idx = (idx + 1) % count
++                    event.accepted = true
++                } else if (event.key === Qt.Key_Left) {
++                    idx = (idx - 1 + count) % count
++                    event.accepted = true
++                } else if (event.key === Qt.Key_Down) {
++                    idx = Math.min(idx + cols, count - 1)
++                    event.accepted = true
++                } else if (event.key === Qt.Key_Up) {
++                    idx = Math.max(idx - cols, 0)
++                    event.accepted = true
++                } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Space) {
++                    if (idx >= 0 && idx < count) {
++                        root.changeDuration(root.durationOptions[idx].value)
++                    }
++                    event.accepted = true
++                } else if (event.key === Qt.Key_Escape) {
++                    closePopout()
++                    event.accepted = true
++                }
++                if (event.accepted) {
++                    popoutScope.currentIndex = idx
++                }
++            }
++
++            Rectangle {
++                id: popoutBg
++                anchors.fill: parent
++                radius: Theme.cornerRadius
++                color: Theme.surfaceContainerHigh
++                border.width: 0
++            }
++
++            Column {
++                id: contentColumn
++                anchors.left: parent.left
++                anchors.right: parent.right
++                anchors.margins: Theme.spacingM
++                spacing: Theme.spacingS
++
++                StyledText {
++                    text: I18n.tr("Caffeine") + " — " + I18n.tr(caffeineActive ? "Active" : "Inactive")
++                    font.pixelSize: Theme.fontSizeLarge
++                    color: Theme.surfaceText
++                    font.weight: Font.Medium
++                    bottomPadding: Theme.spacingXS
++                }
++
++                Grid {
++                    id: durationGrid
++                    width: parent.width
++                    columns: 3
++                    spacing: Theme.spacingS
++
++                    Repeater {
++                        model: root.durationOptions
++
++                        delegate: Rectangle {
++                            required property var modelData
++                            required property int index
++
++                            width: (parent.width - Theme.spacingS * 2) / 3
++                            height: 48
++                            radius: Theme.cornerRadius
++                            color: {
++                                if (popoutScope.currentIndex === index) return Theme.primaryPressed
++                                if (optionMouseArea.containsMouse) return Theme.surfaceContainerHighest
++                                return (root.selectedDuration === modelData.value ? Theme.withAlpha(Theme.primary, 0.12) : "transparent")
++                            }
++                            border.color: root.selectedDuration === modelData.value ? Theme.primary : Qt.rgba(Theme.outline.r, Theme.outline.g, Theme.outline.b, 0.2)
++                            border.width: root.selectedDuration === modelData.value ? 2 : 1
++
++                            MouseArea {
++                                id: optionMouseArea
++                                anchors.fill: parent
++                                hoverEnabled: true
++                                cursorShape: Qt.PointingHandCursor
++                                onClicked: {
++                                    popoutScope.currentIndex = index
++                                    root.changeDuration(modelData.value);
++                                }
++                            }
++
++                            StyledText {
++                                text: modelData.label
++                                color: root.selectedDuration === modelData.value ? Theme.primary : Theme.surfaceText
++                                font.pixelSize: Theme.fontSizeMedium
++                                font.weight: root.selectedDuration === modelData.value ? Font.Medium : Font.Normal
++                                anchors.centerIn: parent
++                            }
++
++                            // Activate on keyboard Enter/Space when focused
++                            Keys.onReturnPressed: function(event) {
++                                popoutScope.currentIndex = index
++                                root.changeDuration(modelData.value)
++                                event.accepted = true
++                            }
++                            Keys.onSpacePressed: function(event) {
++                                popoutScope.currentIndex = index
++                                root.changeDuration(modelData.value)
++                                event.accepted = true
++                            }
++                        }
++                    }
++                }
++            }
++        }
++    }
++
+     onCcWidgetToggled: {
+         toggleCaffeine()
+     }
