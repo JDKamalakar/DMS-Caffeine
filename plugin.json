@@ -2,7 +2,7 @@
   "id": "caffeine",
   "name": "Caffeine",
   "description": "Keep your screen awake and prevent idle sleep with a single click.",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "author": "Loc Huynh",
   "type": "widget",
   "icon": "local_cafe",
