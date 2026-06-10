@@ -4,6 +4,8 @@ import qs.Common
 import qs.Widgets
 import qs.Services
 import qs.Modules.Plugins
+import QtQuick.Layouts
+import QtQuick.Controls
 
 PluginComponent {
     id: root
@@ -97,9 +99,10 @@ PluginComponent {
     ccWidgetIsActive: caffeineActive
     ccDetailHeight: {
         const rows = Math.ceil(durationOptions.length / 3);
-        const headerHeight = Theme.fontSizeLarge + Theme.spacingXS + Theme.spacingM;
-        const gridHeight = rows * 48 + Math.max(0, rows - 1) * Theme.spacingS;
-        return headerHeight + gridHeight + Theme.spacingM * 2;
+        const headerCardHeight = 72;
+        const gridHeight = rows * 48 + Math.max(0, rows - 1) * 4;
+        const durationCardHeight = (Theme.spacingM * 2) + 20 + Theme.spacingS + gridHeight;
+        return 16 + headerCardHeight + Theme.spacingM + durationCardHeight + 16;
     }
 
     readonly property color pillColor: caffeineActive ? Theme.primary : Theme.surfaceText
@@ -151,14 +154,34 @@ PluginComponent {
     }
 
     // Popout dimensions
-    popoutWidth: 320
+    popoutWidth: 340
     popoutHeight: 0 // auto from content
 
     // Popout content: duration selector grid
     popoutContent: Component {
+        PopoutComponent {
+            id: detailPopout
+            headerText: ""
+            detailsText: ""
+            showCloseButton: false
+
+            Loader {
+                width: parent.width
+                asynchronous: false
+                sourceComponent: popoutInternal
+                
+                opacity: status === Loader.Ready ? 1 : 0
+                Behavior on opacity { NumberAnimation { duration: 100 } }
+            }
+        }
+    }
+
+    Component {
+        id: popoutInternal
         FocusScope {
             id: popoutScope
-            implicitHeight: contentColumn.implicitHeight + Theme.spacingM * 2
+            width: parent.width
+            implicitHeight: popoutMainCol.implicitHeight + 2
             property int currentIndex: 0
 
             // Keyboard navigation
@@ -192,88 +215,310 @@ PluginComponent {
                 }
             }
 
-            Rectangle {
-                id: popoutBg
-                anchors.fill: parent
-                radius: Theme.cornerRadius
-                color: Theme.surfaceContainerHigh
-                border.width: 0
-            }
-
             Column {
-                id: contentColumn
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.margins: Theme.spacingM
-                spacing: Theme.spacingS
+                id: popoutMainCol
+                width: parent.width
+                topPadding: 0
+                bottomPadding: 2
+                spacing: Theme.spacingM
 
-                StyledText {
-                    text: I18n.tr("Caffeine") + " — " + I18n.tr(caffeineActive ? "Active" : "Inactive")
-                    font.pixelSize: Theme.fontSizeLarge
-                    color: Theme.surfaceText
-                    font.weight: Font.Medium
-                    bottomPadding: Theme.spacingXS
-                }
+                // --- Caffeine Header Card ---
+                StyledRect {
+                    width: parent.width; anchors.horizontalCenter: parent.horizontalCenter; height: 72
+                    radius: Theme.cornerRadius
+                    color: Theme.withAlpha(Theme.surfaceContainerHigh, Theme.popupTransparency)
+                    border.width: 1
+                    border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15)
+                    RowLayout {
+                        anchors.fill: parent; anchors.margins: Theme.spacingM; spacing: Theme.spacingM
+                        Rectangle {
+                            width: 42; height: 42; radius: 21
+                            color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.2)
+                            DankIcon { name: "local_cafe"; size: 24; color: Theme.surfaceText; anchors.centerIn: parent }
+                        }
+                        Column {
+                            Layout.fillWidth: true; Layout.alignment: Qt.AlignVCenter; spacing: 0
+                            StyledText { text: "Caffeine"; font.bold: true; font.pixelSize: Theme.fontSizeLarge; color: Theme.surfaceText }
+                            Item {
+                                width: parent.width; height: 16
+                                StyledText {
+                                    id: modeTxtPop
+                                    width: parent.width
+                                    text: root.caffeineActive ? "Active" : "Inactive"
+                                    font.pixelSize: Theme.fontSizeSmall - 1
+                                    color: Theme.primary
+                                    opacity: 0.85
 
-                Grid {
-                    id: durationGrid
-                    width: parent.width
-                    columns: 3
-                    spacing: Theme.spacingS
-
-                    Repeater {
-                        model: root.durationOptions
-
-                        delegate: Rectangle {
-                            required property var modelData
-                            required property int index
-
-                            width: (parent.width - Theme.spacingS * 2) / 3
-                            height: 48
-                            radius: Theme.cornerRadius
-                            color: {
-                                if (popoutScope.currentIndex === index) return Theme.primaryPressed
-                                if (optionMouseArea.containsMouse) return Theme.surfaceContainerHighest
-                                return (root.selectedDuration === modelData.value ? Theme.withAlpha(Theme.primary, 0.12) : "transparent")
-                            }
-                            border.color: root.selectedDuration === modelData.value ? Theme.primary : Qt.rgba(Theme.outline.r, Theme.outline.g, Theme.outline.b, 0.2)
-                            border.width: root.selectedDuration === modelData.value ? 2 : 1
-
-                            MouseArea {
-                                id: optionMouseArea
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: {
-                                    if (typeof popoutScope !== 'undefined') popoutScope.currentIndex = index
-                                    const isSelected = String(root.selectedDuration) === String(modelData.value)
-                                    if (isSelected) {
-                                        root.toggleCaffeine(modelData.value)
-                                        if (typeof popoutScope !== 'undefined') closePopout()
-                                    } else {
-                                        root.changeDuration(modelData.value)
+                                    onTextChanged: subtitleAnimPop.restart()
+                                    SequentialAnimation {
+                                        id: subtitleAnimPop
+                                        ParallelAnimation {
+                                            NumberAnimation { target: modeTxtPop; property: "opacity"; to: 0; duration: 150; easing.type: Easing.OutQuad }
+                                            NumberAnimation { target: modeTxtPop; property: "y"; to: 5; duration: 150; easing.type: Easing.OutQuad }
+                                        }
+                                        PropertyAction { target: modeTxtPop; property: "y"; value: -5 }
+                                        ParallelAnimation {
+                                            NumberAnimation { target: modeTxtPop; property: "opacity"; to: 0.85; duration: 200; easing.type: Easing.InQuad }
+                                            NumberAnimation { target: modeTxtPop; property: "y"; to: 0; duration: 200; easing.type: Easing.InQuad }
+                                        }
                                     }
                                 }
                             }
+                        }
+                        Item {
+                            id: toggleBtnPop
+                            height: 38; width: 105
+                            Layout.alignment: Qt.AlignVCenter
+                            
+                            scale: toggleAreaPop.pressed ? 0.9 : (toggleAreaPop.containsMouse ? 1.05 : 1.0)
+                            Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
 
-                            StyledText {
-                                text: modelData.label
-                                color: root.selectedDuration === modelData.value ? Theme.primary : Theme.surfaceText
-                                font.pixelSize: Theme.fontSizeMedium
-                                font.weight: root.selectedDuration === modelData.value ? Font.Medium : Font.Normal
+                            MouseArea {
+                                id: toggleAreaPop
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onPressed: mouse => toggleRipplePop.trigger(mouse.x, mouse.y)
+                                onClicked: {
+                                    root.toggleCaffeine()
+                                }
+                            }
+
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: root.caffeineActive ? height / 2 : Theme.cornerRadius
+                                color: root.caffeineActive 
+                                    ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.18)
+                                    : (toggleAreaPop.containsMouse ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.1) : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.4))
+                                border.width: 1
+                                border.color: root.caffeineActive 
+                                    ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.6)
+                                    : Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, toggleAreaPop.containsMouse ? 0.3 : 0.15)
+                                Behavior on color { ColorAnimation { duration: 150 } }
+                                Behavior on border.color { ColorAnimation { duration: 150 } }
+                            }
+
+                            Row {
                                 anchors.centerIn: parent
+                                spacing: 8
+                                
+                                DankIcon {
+                                    id: toggleBtnIconPop
+                                    name: "power_settings_new"
+                                    size: 18
+                                    color: Theme.primary
+                                    
+                                    SequentialAnimation {
+                                        running: toggleAreaPop.containsMouse
+                                        loops: Animation.Infinite
+                                        onStopped: toggleBtnIconPop.rotation = 0
+                                        NumberAnimation { target: toggleBtnIconPop; property: "rotation"; to: -8; duration: 150; easing.type: Easing.InOutQuad }
+                                        NumberAnimation { target: toggleBtnIconPop; property: "rotation"; to: 8; duration: 150; easing.type: Easing.InOutQuad }
+                                        NumberAnimation { target: toggleBtnIconPop; property: "rotation"; to: 0; duration: 150; easing.type: Easing.InOutQuad }
+                                        PauseAnimation { duration: 400 }
+                                    }
+                                }
+                                
+                                StyledText {
+                                    text: root.caffeineActive ? "Turn Off" : "Turn On"
+                                    color: Theme.primary
+                                    font.pixelSize: Theme.fontSizeSmall
+                                    font.bold: true
+                                    verticalAlignment: Text.AlignVCenter
+                                }
                             }
 
-                            // Activate on keyboard Enter/Space when focused
-                            Keys.onReturnPressed: function(event) {
-                                popoutScope.currentIndex = index
-                                root.changeDuration(modelData.value)
-                                event.accepted = true
+                            DankRipple {
+                                id: toggleRipplePop
+                                rippleColor: Theme.surfaceText
+                                cornerRadius: Theme.cornerRadius
+                                anchors.fill: parent
                             }
-                            Keys.onSpacePressed: function(event) {
-                                popoutScope.currentIndex = index
-                                root.changeDuration(modelData.value)
-                                event.accepted = true
+                        }
+                    }
+                }
+
+                // --- Duration Grid Section ---
+                StyledRect {
+                    width: parent.width; anchors.horizontalCenter: parent.horizontalCenter
+                    height: popoutDurationCol.implicitHeight + Theme.spacingM * 2
+                    radius: Theme.cornerRadius
+                    color: Theme.withAlpha(Theme.surfaceContainerHigh, Theme.popupTransparency)
+                    border.width: 1
+                    border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15)
+
+                    Column {
+                        id: popoutDurationCol
+                        width: parent.width - Theme.spacingM * 2
+                        x: Theme.spacingM
+                        y: Theme.spacingM
+                        spacing: Theme.spacingS
+
+                        RowLayout {
+                            anchors.left: parent.left; anchors.right: parent.right
+                            anchors.leftMargin: 4; anchors.rightMargin: 4
+                            spacing: Theme.spacingXS
+                            DankIcon { name: "timer"; size: 14; color: Theme.surfaceText }
+                            StyledText { text: "Keep Awake Duration"; font.pixelSize: Theme.fontSizeSmall; font.weight: Font.Bold; color: Theme.surfaceText; Layout.fillWidth: true }
+                        }
+
+                        Flow {
+                            id: popoutDurationGrid
+                            width: parent.width
+                            spacing: 4
+
+                            Repeater {
+                                model: root.durationOptions
+
+                                delegate: Item {
+                                    required property var modelData
+                                    required property int index
+
+                                    readonly property int total: root.durationOptions.length
+                                    readonly property int cols: 3
+                                    readonly property int r: Math.floor(index / cols)
+                                    readonly property int c: index % cols
+                                    readonly property int maxR: Math.floor((total - 1) / cols)
+                                    
+                                    readonly property bool isLastItem: index === total - 1
+                                    readonly property int itemsInLastRow: total % cols === 0 ? cols : total % cols
+
+                                    width: {
+                                        const baseWidth = (popoutDurationGrid.width - 4 * 2) / 3;
+                                        if (isLastItem) {
+                                            if (itemsInLastRow === 1) return popoutDurationGrid.width;
+                                            if (itemsInLastRow === 2) return popoutDurationGrid.width - baseWidth - 4;
+                                        }
+                                        return baseWidth;
+                                    }
+                                    height: 48
+                                    
+                                    readonly property bool isSelected: String(root.selectedDuration) === String(modelData.value)
+                                    readonly property bool hovered: popoutOptionMouseArea.containsMouse
+                                    
+                                    Canvas {
+                                        id: popoutDurationBg
+                                        anchors.fill: parent
+
+                                        readonly property bool isTop: r === 0
+                                        readonly property bool isBottom: r === maxR
+                                        readonly property bool isLeft: c === 0
+                                        readonly property bool isRight: c === cols - 1 || index === total - 1
+                                        
+                                        property real innerRadius: 6
+                                        property real outerRadius: 12
+                                        
+                                        property real pillRadius: Math.floor((height - 1) / 2)
+                                        property real tlr: isSelected ? pillRadius : (isTop && isLeft ? outerRadius : innerRadius)
+                                        property real trr: isSelected ? pillRadius : (isTop && isRight ? outerRadius : innerRadius)
+                                        property real blr: isSelected ? pillRadius : (isBottom && isLeft ? outerRadius : innerRadius)
+                                        property real brr: isSelected ? pillRadius : (isBottom && isRight ? outerRadius : innerRadius)
+
+                                        property real tlrAnim: tlr; Behavior on tlrAnim { NumberAnimation { duration: 300; easing.type: Easing.OutExpo } }
+                                        property real trrAnim: trr; Behavior on trrAnim { NumberAnimation { duration: 300; easing.type: Easing.OutExpo } }
+                                        property real blrAnim: blr; Behavior on blrAnim { NumberAnimation { duration: 300; easing.type: Easing.OutExpo } }
+                                        property real brrAnim: brr; Behavior on brrAnim { NumberAnimation { duration: 300; easing.type: Easing.OutExpo } }
+
+                                        property color paintColor: {
+                                            if (typeof popoutScope !== 'undefined' && popoutScope.currentIndex === index) return Theme.primaryPressed;
+                                            return isSelected
+                                                ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.18)
+                                                : (hovered
+                                                    ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.1)
+                                                    : Qt.rgba(Theme.secondary.r, Theme.secondary.g, Theme.secondary.b, 0.04))
+                                        }
+                                        Behavior on paintColor { ColorAnimation { duration: 150 } }
+                                        
+                                        property color paintBorder: isSelected
+                                            ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.6)
+                                            : (hovered
+                                                ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.4)
+                                                : Qt.rgba(Theme.secondary.r, Theme.secondary.g, Theme.secondary.b, 0.15))
+                                        Behavior on paintBorder { ColorAnimation { duration: 150 } }
+
+                                        onTlrAnimChanged: requestPaint()
+                                        onTrrAnimChanged: requestPaint()
+                                        onBlrAnimChanged: requestPaint()
+                                        onBrrAnimChanged: requestPaint()
+                                        onPaintColorChanged: requestPaint()
+                                        onPaintBorderChanged: requestPaint()
+
+                                        onPaint: {
+                                            var ctx = getContext("2d");
+                                            var x = 0.5, y = 0.5;
+                                            var w = width - 1, h = height - 1;
+                                            
+                                            ctx.reset();
+                                            ctx.beginPath();
+                                            ctx.moveTo(x + tlrAnim, y);
+                                            ctx.lineTo(x + w - trrAnim, y);
+                                            ctx.arcTo(x + w, y, x + w, y + trrAnim, trrAnim);
+                                            ctx.lineTo(x + w, y + h - brrAnim);
+                                            ctx.arcTo(x + w, y + h, x + w - brrAnim, y + h, brrAnim);
+                                            ctx.lineTo(x + blrAnim, y + h);
+                                            ctx.arcTo(x, y + h, x, y + h - blrAnim, blrAnim);
+                                            ctx.lineTo(x, y + tlrAnim);
+                                            ctx.arcTo(x, y, x + tlrAnim, y, tlrAnim);
+                                            ctx.closePath();
+                                            
+                                            ctx.fillStyle = paintColor;
+                                            ctx.fill();
+                                            ctx.strokeStyle = paintBorder;
+                                            ctx.lineWidth = 1;
+                                            ctx.stroke();
+                                        }
+                                        
+                                        Rectangle { 
+                                            anchors.fill: parent; radius: parent.tlrAnim; color: "white"
+                                            anchors.margins: 0.5
+                                            opacity: hovered ? 0.05 : 0; Behavior on opacity { NumberAnimation { duration: 150 } } 
+                                        }
+                                    }
+
+                                    DankRipple { id: popoutOptionRipple; anchors.fill: parent; cornerRadius: popoutDurationBg.tlrAnim; rippleColor: Theme.primary }
+
+                                    MouseArea {
+                                        id: popoutOptionMouseArea
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onPressed: function(mouse) { popoutOptionRipple.trigger(mouse.x, mouse.y); }
+                                        onClicked: {
+                                            if (typeof popoutScope !== 'undefined') popoutScope.currentIndex = index
+                                            const isSel = String(root.selectedDuration) === String(modelData.value)
+                                            if (isSel) {
+                                                root.toggleCaffeine(modelData.value)
+                                                if (typeof popoutScope !== 'undefined') closePopout()
+                                            } else {
+                                                root.changeDuration(modelData.value)
+                                            }
+                                        }
+                                    }
+
+                                    StyledText {
+                                        text: modelData.label
+                                        color: isSelected ? Theme.primary : Theme.surfaceText
+                                        font.pixelSize: Theme.fontSizeMedium
+                                        font.weight: isSelected ? Font.Bold : Font.Normal
+                                        anchors.centerIn: parent
+                                        Behavior on color { ColorAnimation { duration: 200 } }
+                                    }
+
+                                    Keys.onReturnPressed: function(event) {
+                                        if (typeof popoutScope !== 'undefined') {
+                                            popoutScope.currentIndex = index
+                                            root.changeDuration(modelData.value)
+                                            event.accepted = true
+                                        }
+                                    }
+                                    Keys.onSpacePressed: function(event) {
+                                        if (typeof popoutScope !== 'undefined') {
+                                            popoutScope.currentIndex = index
+                                            root.changeDuration(modelData.value)
+                                            event.accepted = true
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -436,70 +681,306 @@ PluginComponent {
     }
 
     ccDetailContent: Component {
-        Rectangle {
-            id: detailRoot
-            implicitHeight: detailColumn.implicitHeight + Theme.spacingM * 2
-            radius: Theme.cornerRadius
-            color: Theme.surfaceContainerHigh
-            border.width: 0
+        ScrollView {
+            width: parent.width
+            height: parent.height
+            clip: false
+            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+            ScrollBar.vertical.policy: ScrollBar.AlwaysOff
 
-            Column {
-                id: detailColumn
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.margins: Theme.spacingM
-                spacing: Theme.spacingS
+            Loader {
+                width: parent.width
+                asynchronous: true
+                sourceComponent: ccDetailInternal
+                
+                opacity: status === Loader.Ready ? 1 : 0
+                Behavior on opacity { NumberAnimation { duration: 20 } }
+            }
+        }
+    }
 
-                StyledText {
-                    text: I18n.tr("Keep Awake Duration")
-                    font.pixelSize: Theme.fontSizeLarge
-                    color: Theme.surfaceText
-                    font.weight: Font.Medium
-                    bottomPadding: Theme.spacingXS
-                }
+    Component {
+        id: ccDetailInternal
+        Column {
+            id: ccDetailCol
+            width: parent.width
+            padding: 16
+            spacing: Theme.spacingM
 
-                Grid {
-                    width: parent.width
-                    columns: 3
-                    spacing: Theme.spacingS
+            // --- Caffeine Header Card ---
+            StyledRect {
+                width: parent.width - 32; anchors.horizontalCenter: parent.horizontalCenter; height: 72
+                radius: Theme.cornerRadius
+                color: Theme.withAlpha(Theme.surfaceContainerHigh, Theme.popupTransparency)
+                border.width: 1
+                border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15)
+                RowLayout {
+                    anchors.fill: parent; anchors.margins: Theme.spacingM; spacing: Theme.spacingM
+                    Rectangle {
+                        width: 42; height: 42; radius: 21
+                        color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.2)
+                        DankIcon { name: "local_cafe"; size: 24; color: Theme.surfaceText; anchors.centerIn: parent }
+                    }
+                    Column {
+                        Layout.fillWidth: true; Layout.alignment: Qt.AlignVCenter; spacing: 0
+                        StyledText { text: "Caffeine"; font.bold: true; font.pixelSize: Theme.fontSizeLarge; color: Theme.surfaceText }
+                        Item {
+                            width: parent.width; height: 16
+                            StyledText {
+                                id: modeTxtCC
+                                width: parent.width
+                                text: root.caffeineActive ? "Active" : "Inactive"
+                                font.pixelSize: Theme.fontSizeSmall - 1
+                                color: Theme.primary
+                                opacity: 0.85
 
-                    Repeater {
-                        model: root.durationOptions
-
-                        delegate: Rectangle {
-                            required property var modelData
-                            required property int index
-
-                            width: (parent.width - Theme.spacingS * 2) / 3
-                            height: 48
-                            radius: Theme.cornerRadius
-                            color: optionMouseArea.containsMouse 
-                                ? Theme.surfaceContainerHighest 
-                                : (root.selectedDuration === modelData.value ? Theme.withAlpha(Theme.primary, 0.12) : "transparent")
-                            border.color: root.selectedDuration === modelData.value ? Theme.primary : Qt.rgba(Theme.outline.r, Theme.outline.g, Theme.outline.b, 0.2)
-                            border.width: root.selectedDuration === modelData.value ? 2 : 1
-
-                            MouseArea {
-                                id: optionMouseArea
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: {
-                                    const isSelected = String(root.selectedDuration) === String(modelData.value)
-                                    if (isSelected) {
-                                        root.toggleCaffeine(modelData.value)
-                                    } else {
-                                        root.changeDuration(modelData.value)
+                                onTextChanged: subtitleAnimCC.restart()
+                                SequentialAnimation {
+                                    id: subtitleAnimCC
+                                    ParallelAnimation {
+                                        NumberAnimation { target: modeTxtCC; property: "opacity"; to: 0; duration: 150; easing.type: Easing.OutQuad }
+                                        NumberAnimation { target: modeTxtCC; property: "y"; to: 5; duration: 150; easing.type: Easing.OutQuad }
+                                    }
+                                    PropertyAction { target: modeTxtCC; property: "y"; value: -5 }
+                                    ParallelAnimation {
+                                        NumberAnimation { target: modeTxtCC; property: "opacity"; to: 0.85; duration: 150; easing.type: Easing.InQuad }
+                                        NumberAnimation { target: modeTxtCC; property: "y"; to: 0; duration: 150; easing.type: Easing.InQuad }
                                     }
                                 }
                             }
+                        }
+                    }
+                    Item {
+                        id: toggleBtnCC
+                        height: 38; width: 105
+                        Layout.alignment: Qt.AlignVCenter
+                        
+                        scale: toggleAreaCC.pressed ? 0.9 : (toggleAreaCC.containsMouse ? 1.05 : 1.0)
+                        Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
 
+                        MouseArea {
+                            id: toggleAreaCC
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onPressed: mouse => toggleRippleCC.trigger(mouse.x, mouse.y)
+                            onClicked: root.toggleCaffeine()
+                        }
+
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: root.caffeineActive ? height / 2 : Theme.cornerRadius
+                            color: root.caffeineActive 
+                                ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.18)
+                                : (toggleAreaCC.containsMouse ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.1) : Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.4))
+                            border.width: 1
+                            border.color: root.caffeineActive 
+                                ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.6)
+                                : Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, toggleAreaCC.containsMouse ? 0.3 : 0.15)
+                            Behavior on color { ColorAnimation { duration: 150 } }
+                            Behavior on border.color { ColorAnimation { duration: 150 } }
+                        }
+
+                        Row {
+                            anchors.centerIn: parent
+                            spacing: 8
+                            
+                            DankIcon {
+                                id: toggleBtnIconCC
+                                name: "power_settings_new"
+                                size: 18
+                                color: Theme.primary
+                                
+                                SequentialAnimation {
+                                    running: toggleAreaCC.containsMouse
+                                    loops: Animation.Infinite
+                                    onStopped: toggleBtnIconCC.rotation = 0
+                                    NumberAnimation { target: toggleBtnIconCC; property: "rotation"; to: -8; duration: 150; easing.type: Easing.InOutQuad }
+                                    NumberAnimation { target: toggleBtnIconCC; property: "rotation"; to: 8; duration: 150; easing.type: Easing.InOutQuad }
+                                    NumberAnimation { target: toggleBtnIconCC; property: "rotation"; to: 0; duration: 150; easing.type: Easing.InOutQuad }
+                                    PauseAnimation { duration: 400 }
+                                }
+                            }
+                            
                             StyledText {
-                                text: modelData.label
-                                color: root.selectedDuration === modelData.value ? Theme.primary : Theme.surfaceText
-                                font.pixelSize: Theme.fontSizeMedium
-                                font.weight: root.selectedDuration === modelData.value ? Font.Medium : Font.Normal
-                                anchors.centerIn: parent
+                                text: root.caffeineActive ? "Turn Off" : "Turn On"
+                                color: Theme.primary
+                                font.pixelSize: Theme.fontSizeSmall
+                                font.bold: true
+                                verticalAlignment: Text.AlignVCenter
+                            }
+                        }
+
+                        DankRipple {
+                            id: toggleRippleCC
+                            rippleColor: Theme.surfaceText
+                            cornerRadius: Theme.cornerRadius
+                            anchors.fill: parent
+                        }
+                    }
+                }
+            }
+
+            // --- Duration Grid Section ---
+            StyledRect {
+                width: parent.width - 32; anchors.horizontalCenter: parent.horizontalCenter
+                height: ccDurationCol.implicitHeight + Theme.spacingM * 2
+                radius: Theme.cornerRadius
+                color: Theme.withAlpha(Theme.surfaceContainerHigh, Theme.popupTransparency)
+                border.width: 1
+                border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15)
+
+                Column {
+                    id: ccDurationCol
+                    width: parent.width - Theme.spacingM * 2
+                    x: Theme.spacingM
+                    y: Theme.spacingM
+                    spacing: Theme.spacingS
+
+                    RowLayout {
+                        anchors.left: parent.left; anchors.right: parent.right
+                        anchors.leftMargin: 4; anchors.rightMargin: 4
+                        spacing: Theme.spacingXS
+                        DankIcon { name: "timer"; size: 14; color: Theme.surfaceText }
+                        StyledText { text: "Keep Awake Duration"; font.pixelSize: Theme.fontSizeSmall; font.weight: Font.Bold; color: Theme.surfaceText; Layout.fillWidth: true }
+                    }
+
+                    Flow {
+                        id: ccDurationGrid
+                        width: parent.width
+                        spacing: 4
+
+                        Repeater {
+                            model: root.durationOptions
+
+                            delegate: Item {
+                                required property var modelData
+                                required property int index
+
+                                readonly property int total: root.durationOptions.length
+                                readonly property int cols: 3
+                                readonly property int r: Math.floor(index / cols)
+                                readonly property int c: index % cols
+                                readonly property int maxR: Math.floor((total - 1) / cols)
+                                
+                                readonly property bool isLastItem: index === total - 1
+                                readonly property int itemsInLastRow: total % cols === 0 ? cols : total % cols
+
+                                width: {
+                                    const baseWidth = (ccDurationGrid.width - 4 * 2) / 3;
+                                    if (isLastItem) {
+                                        if (itemsInLastRow === 1) return ccDurationGrid.width;
+                                        if (itemsInLastRow === 2) return ccDurationGrid.width - baseWidth - 4;
+                                    }
+                                    return baseWidth;
+                                }
+                                height: 48
+                                
+                                readonly property bool isSelected: String(root.selectedDuration) === String(modelData.value)
+                                readonly property bool hovered: ccOptionMouseArea.containsMouse
+                                
+                                Canvas {
+                                    id: ccDurationBg
+                                    anchors.fill: parent
+
+                                    readonly property bool isTop: r === 0
+                                    readonly property bool isBottom: r === maxR
+                                    readonly property bool isLeft: c === 0
+                                    readonly property bool isRight: c === cols - 1 || index === total - 1
+                                    
+                                    property real innerRadius: 6
+                                    property real outerRadius: 12
+                                    
+                                    property real pillRadius: Math.floor((height - 1) / 2)
+                                    property real tlr: isSelected ? pillRadius : (isTop && isLeft ? outerRadius : innerRadius)
+                                    property real trr: isSelected ? pillRadius : (isTop && isRight ? outerRadius : innerRadius)
+                                    property real blr: isSelected ? pillRadius : (isBottom && isLeft ? outerRadius : innerRadius)
+                                    property real brr: isSelected ? pillRadius : (isBottom && isRight ? outerRadius : innerRadius)
+
+                                    property real tlrAnim: tlr; Behavior on tlrAnim { NumberAnimation { duration: 300; easing.type: Easing.OutExpo } }
+                                    property real trrAnim: trr; Behavior on trrAnim { NumberAnimation { duration: 300; easing.type: Easing.OutExpo } }
+                                    property real blrAnim: blr; Behavior on blrAnim { NumberAnimation { duration: 300; easing.type: Easing.OutExpo } }
+                                    property real brrAnim: brr; Behavior on brrAnim { NumberAnimation { duration: 300; easing.type: Easing.OutExpo } }
+
+                                    property color paintColor: isSelected
+                                        ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.18)
+                                        : (hovered
+                                            ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.1)
+                                            : Qt.rgba(Theme.secondary.r, Theme.secondary.g, Theme.secondary.b, 0.04))
+                                    Behavior on paintColor { ColorAnimation { duration: 150 } }
+                                    
+                                    property color paintBorder: isSelected
+                                        ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.6)
+                                        : (hovered
+                                            ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.4)
+                                            : Qt.rgba(Theme.secondary.r, Theme.secondary.g, Theme.secondary.b, 0.15))
+                                    Behavior on paintBorder { ColorAnimation { duration: 150 } }
+
+                                    onTlrAnimChanged: requestPaint()
+                                    onTrrAnimChanged: requestPaint()
+                                    onBlrAnimChanged: requestPaint()
+                                    onBrrAnimChanged: requestPaint()
+                                    onPaintColorChanged: requestPaint()
+                                    onPaintBorderChanged: requestPaint()
+
+                                    onPaint: {
+                                        var ctx = getContext("2d");
+                                        var x = 0.5, y = 0.5;
+                                        var w = width - 1, h = height - 1;
+                                        
+                                        ctx.reset();
+                                        ctx.beginPath();
+                                        ctx.moveTo(x + tlrAnim, y);
+                                        ctx.lineTo(x + w - trrAnim, y);
+                                        ctx.arcTo(x + w, y, x + w, y + trrAnim, trrAnim);
+                                        ctx.lineTo(x + w, y + h - brrAnim);
+                                        ctx.arcTo(x + w, y + h, x + w - brrAnim, y + h, brrAnim);
+                                        ctx.lineTo(x + blrAnim, y + h);
+                                        ctx.arcTo(x, y + h, x, y + h - blrAnim, blrAnim);
+                                        ctx.lineTo(x, y + tlrAnim);
+                                        ctx.arcTo(x, y, x + tlrAnim, y, tlrAnim);
+                                        ctx.closePath();
+                                        
+                                        ctx.fillStyle = paintColor;
+                                        ctx.fill();
+                                        ctx.strokeStyle = paintBorder;
+                                        ctx.lineWidth = 1;
+                                        ctx.stroke();
+                                    }
+                                    
+                                    Rectangle { 
+                                        anchors.fill: parent; radius: parent.tlrAnim; color: "white"
+                                        anchors.margins: 0.5
+                                        opacity: hovered ? 0.05 : 0; Behavior on opacity { NumberAnimation { duration: 150 } } 
+                                    }
+                                }
+
+                                DankRipple { id: ccOptionRipple; anchors.fill: parent; cornerRadius: ccDurationBg.tlrAnim; rippleColor: Theme.primary }
+
+                                MouseArea {
+                                    id: ccOptionMouseArea
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onPressed: function(mouse) { ccOptionRipple.trigger(mouse.x, mouse.y); }
+                                    onClicked: {
+                                        const isSel = String(root.selectedDuration) === String(modelData.value)
+                                        if (isSel) {
+                                            root.toggleCaffeine(modelData.value)
+                                        } else {
+                                            root.changeDuration(modelData.value)
+                                        }
+                                    }
+                                }
+
+                                StyledText {
+                                    text: modelData.label
+                                    color: isSelected ? Theme.primary : Theme.surfaceText
+                                    font.pixelSize: Theme.fontSizeMedium
+                                    font.weight: isSelected ? Font.Bold : Font.Normal
+                                    anchors.centerIn: parent
+                                    Behavior on color { ColorAnimation { duration: 200 } }
+                                }
                             }
                         }
                     }
