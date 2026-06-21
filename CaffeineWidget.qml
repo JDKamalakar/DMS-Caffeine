@@ -10,26 +10,12 @@ import QtQuick.Shapes
 
 PluginComponent {
     id: root
-    pluginId: "caffeine"
+    pluginId: "caffeine_redesigned"
     pluginService: PluginService
 
     // Reactive states
     readonly property bool caffeineActive: globalIsActive.value
-    property string selectedDuration: {
-        if (pluginData && pluginData.selectedDuration !== undefined && pluginData.selectedDuration !== null && pluginData.selectedDuration !== "undefined" && pluginData.selectedDuration !== "") {
-            return pluginData.selectedDuration;
-        }
-        let def = pluginData?.defaultDuration ?? "infinity";
-        def = def.trim().toLowerCase();
-        if (def === "infinity" || def === "infinite" || def === "inf" || def === "") {
-            return "infinity";
-        }
-        const mins = parseInt(def);
-        if (!isNaN(mins) && mins > 0) {
-            return (mins * 60).toString();
-        }
-        return "infinity";
-    }
+    property string selectedDuration: "infinity"
     readonly property int timeLeft: globalTimeLeft.value
 
     PluginGlobalVar {
@@ -45,21 +31,26 @@ PluginComponent {
     }
 
     // Sync settings
-    property bool showToasts: (pluginData.showToasts ?? true)
+    property bool showToasts: {
+        if (!pluginData) return true;
+        var val = pluginData.showToasts;
+        return val === undefined || val === null ? true : (val === true || val === "true");
+    }
 
     property var durationOptions: {
-        const rawPresets = pluginData?.presets ?? "5, 15, 30, 60, 120, infinity";
-        const items = rawPresets.split(",").map(item => item.trim()).filter(Boolean);
-        const result = [];
-        for (const item of items) {
+        var rawPresets = (pluginData && pluginData.presets) ? pluginData.presets : "5, 15, 30, 60, 120, infinity";
+        var items = String(rawPresets).split(",").map(function(item) { return item.trim(); }).filter(Boolean);
+        var result = [];
+        for (var i = 0; i < items.length; i++) {
+            var item = items[i];
             if (item.toLowerCase() === "infinity" || item.toLowerCase() === "infinite" || item.toLowerCase() === "inf") {
                 result.push({ label: "Infinite", value: "infinity" });
             } else {
-                const mins = parseInt(item);
+                var mins = parseInt(item);
                 if (!isNaN(mins) && mins > 0) {
-                    let label = mins + " Min";
+                    var label = mins + " Min";
                     if (mins >= 60) {
-                        const hrs = mins / 60;
+                        var hrs = mins / 60;
                         if (hrs === 1) {
                             label = "1 Hour";
                         } else if (hrs === Math.round(hrs)) {
@@ -80,6 +71,51 @@ PluginComponent {
             { label: "2 Hours", value: "7200" },
             { label: "Infinite", value: "infinity" }
         ];
+    }
+
+    function updateSelectedDuration() {
+        if (pluginData && pluginData.selectedDuration !== undefined && pluginData.selectedDuration !== null && pluginData.selectedDuration !== "undefined" && pluginData.selectedDuration !== "") {
+            selectedDuration = pluginData.selectedDuration;
+        } else {
+            var def = (pluginData && pluginData.defaultDuration) ? pluginData.defaultDuration : "infinity";
+            def = def.trim().toLowerCase();
+            if (def === "cycle") {
+                selectedDuration = durationOptions.length > 0 ? durationOptions[0].value : "infinity";
+            } else if (def === "infinity" || def === "infinite" || def === "inf" || def === "") {
+                selectedDuration = "infinity";
+            } else {
+                var mins = parseInt(def);
+                if (!isNaN(mins) && mins > 0) {
+                    selectedDuration = (mins * 60).toString();
+                } else {
+                    selectedDuration = "infinity";
+                }
+            }
+        }
+    }
+
+    onPluginDataChanged: updateSelectedDuration()
+    onDurationOptionsChanged: updateSelectedDuration()
+    
+    // Set up initial state on completed in addition to check-caffeine-active
+    Component.onCompleted: {
+        updateSelectedDuration();
+        Proc.runCommand("check-caffeine-active", ["pgrep", "-f", "systemd-inhibit.*DMS Caffeine"], function(output, exitCode) {
+            const isActive = (exitCode === 0 && output.trim() !== "");
+            if (isActive) {
+                globalIsActive.set(true);
+                const expiration = pluginService ? pluginService.loadPluginState(pluginId, "expiration", 0) : 0;
+                if (expiration > Date.now()) {
+                    globalTimeLeft.set(Math.round((expiration - Date.now()) / 1000));
+                    countdownTimer.start();
+                }
+            } else {
+                globalIsActive.set(false);
+                if (pluginService) {
+                    pluginService.savePluginState(pluginId, "expiration", 0);
+                }
+            }
+        });
     }
 
     // Control Center Integration
@@ -153,8 +189,8 @@ PluginComponent {
     pillClickAction: null
 
     // Right click: quick toggle stay-awake with default duration
-    pillRightClickAction: function() {
-        toggleCaffeine()
+    pillRightClickAction: () => {
+        toggleCaffeine(undefined, true);
     }
 
     // Popout dimensions
@@ -170,6 +206,7 @@ PluginComponent {
             border.width: 1
             border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15)
             height: 72
+            implicitHeight: height
             
             RowLayout {
                 anchors.fill: parent; anchors.margins: Theme.spacingM; spacing: Theme.spacingM
@@ -221,7 +258,7 @@ PluginComponent {
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
                         onPressed: mouse => toggleRipple.trigger(mouse.x, mouse.y)
-                        onClicked: root.toggleCaffeine()
+                        onClicked: root.toggleCaffeine(undefined, false)
                     }
 
                     Rectangle {
@@ -285,6 +322,7 @@ PluginComponent {
         StyledRect {
             id: gridRoot
             height: durationCol.implicitHeight + Theme.spacingM * 2
+            implicitHeight: height
             radius: Theme.cornerRadius
             color: Theme.withAlpha(Theme.surfaceContainerHigh, Theme.popupTransparency)
             border.width: 1
@@ -410,15 +448,19 @@ PluginComponent {
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
-                                onPressed: function(mouse) { optionRipple.trigger(mouse.x, mouse.y); }
+                                onPressed: mouse => { optionRipple.trigger(mouse.x, mouse.y); }
                                 onClicked: {
                                     if (typeof popoutScope !== 'undefined') popoutScope.currentIndex = index
                                     const isSel = String(root.selectedDuration) === String(modelData.value)
                                     if (isSel) {
-                                        root.toggleCaffeine(modelData.value)
+                                        root.toggleCaffeine(modelData.value, false)
                                         if (typeof popoutScope !== 'undefined') closePopout()
                                     } else {
                                         root.changeDuration(modelData.value)
+                                        if (!root.caffeineActive) {
+                                            root.toggleCaffeine(modelData.value, false)
+                                            if (typeof popoutScope !== 'undefined') closePopout()
+                                        }
                                     }
                                 }
                             }
@@ -432,14 +474,14 @@ PluginComponent {
                                 Behavior on color { ColorAnimation { duration: 200 } }
                             }
 
-                            Keys.onReturnPressed: function(event) {
+                            Keys.onReturnPressed: event => {
                                 if (typeof popoutScope !== 'undefined') {
                                     popoutScope.currentIndex = index
                                     root.changeDuration(modelData.value)
                                     event.accepted = true
                                 }
                             }
-                            Keys.onSpacePressed: function(event) {
+                            Keys.onSpacePressed: event => {
                                 if (typeof popoutScope !== 'undefined') {
                                     popoutScope.currentIndex = index
                                     root.changeDuration(modelData.value)
@@ -465,11 +507,7 @@ PluginComponent {
 
             Loader {
                 width: parent.width
-                asynchronous: true
                 sourceComponent: popoutInternal
-                
-                opacity: status === Loader.Ready ? 1 : 0
-                Behavior on opacity { NumberAnimation { duration: 100 } }
             }
         }
     }
@@ -483,7 +521,7 @@ PluginComponent {
             property int currentIndex: 0
 
             // Keyboard navigation
-            Keys.onPressed: function(event) {
+            Keys.onPressed: event => {
                 const cols = 3
                 const count = root.durationOptions.length
                 let idx = popoutScope.currentIndex
@@ -536,7 +574,7 @@ PluginComponent {
     }
 
     onCcWidgetToggled: {
-        toggleCaffeine()
+        toggleCaffeine(undefined, true)
     }
 
     Timer {
@@ -548,30 +586,12 @@ PluginComponent {
             globalTimeLeft.set(globalTimeLeft.value - 1);
             if (globalTimeLeft.value <= 0) {
                 countdownTimer.stop();
-                toggleCaffeine(); // Turn off caffeine
+                toggleCaffeine(undefined, false); // Turn off caffeine
             }
         }
     }
 
-    // Sync with system state on startup
-    Component.onCompleted: {
-        Proc.runCommand("check-caffeine-active", ["pgrep", "-f", "DMS Caffeine"], function(output, exitCode) {
-            const isActive = (exitCode === 0 && output.trim() !== "");
-            if (isActive) {
-                globalIsActive.set(true);
-                const expiration = pluginService ? pluginService.loadPluginState(pluginId, "expiration", 0) : 0;
-                if (expiration > Date.now()) {
-                    globalTimeLeft.set(Math.round((expiration - Date.now()) / 1000));
-                    countdownTimer.start();
-                }
-            } else {
-                globalIsActive.set(false);
-                if (pluginService) {
-                    pluginService.savePluginState(pluginId, "expiration", 0);
-                }
-            }
-        })
-    }
+
 
     function formatDurationLabel(dur) {
         if (dur === "infinity") return I18n.tr("indefinitely");
@@ -586,6 +606,54 @@ PluginComponent {
         return hrs.toFixed(1).replace(".0", "") + " " + I18n.tr("hours");
     }
 
+    function deactivateCaffeine() {
+        globalIsActive.set(false);
+        countdownTimer.stop();
+        if (pluginService) {
+            pluginService.savePluginState(pluginId, "expiration", 0);
+        }
+        Proc.runCommand("deactivate-caffeine", ["pkill", "-f", "systemd-inhibit.*DMS Caffeine"], function(output, exitCode) {
+            if (showToasts && typeof ToastService !== "undefined") {
+                ToastService.showInfo(I18n.tr("Screen sleep is now allowed."))
+            }
+        });
+    }
+
+    function activateCaffeine(targetDuration) {
+        var args = [
+            "systemd-inhibit", 
+            "--what=idle", 
+            "--who=DMS Caffeine", 
+            "--why=Manual stay awake override"
+        ];
+        if (targetDuration === "infinity") {
+            args.push("sleep", "infinity");
+        } else {
+            args.push("sleep", targetDuration);
+        }
+        Quickshell.execDetached(args);
+        
+        if (targetDuration !== "infinity") {
+            var durationSecs = parseInt(targetDuration);
+            globalTimeLeft.set(durationSecs);
+            var expiration = Date.now() + durationSecs * 1000;
+            if (pluginService) {
+                pluginService.savePluginState(pluginId, "expiration", expiration);
+            }
+            countdownTimer.restart();
+        } else {
+            if (pluginService) {
+                pluginService.savePluginState(pluginId, "expiration", 0);
+            }
+        }
+
+        globalIsActive.set(true);
+        
+        if (showToasts && typeof ToastService !== "undefined") {
+            ToastService.showInfo(targetDuration === "infinity" ? I18n.tr("Screen will stay awake.") : I18n.tr("Screen will stay awake for ") + formatDurationLabel(targetDuration) + ".")
+        }
+    }
+
     function changeDuration(newDuration) {
         if (newDuration === undefined || newDuration === null || newDuration === "undefined" || newDuration === "") return;
         selectedDuration = newDuration;
@@ -594,97 +662,85 @@ PluginComponent {
         }
 
         if (caffeineActive) {
-            // Keep active, but update the duration!
-            // 1. Kill the old process
-            Proc.runCommand("deactivate-caffeine", ["pkill", "-f", "DMS Caffeine"], null, 0);
-
-            // 2. Start the new process with new duration
-            const args = [
-                "systemd-inhibit", 
-                "--what=idle", 
-                "--who=DMS Caffeine", 
-                "--why=Manual stay awake override"
-            ];
-            if (newDuration === "infinity") {
-                args.push("sleep", "infinity");
-            } else {
-                args.push("sleep", newDuration);
-            }
-            Quickshell.execDetached(args);
-
-            // 3. Update timer
-            countdownTimer.stop();
-            if (newDuration !== "infinity") {
-                const durationSecs = parseInt(newDuration);
-                globalTimeLeft.set(durationSecs);
-                const expiration = Date.now() + durationSecs * 1000;
-                if (pluginService) {
-                    pluginService.savePluginState(pluginId, "expiration", expiration);
+            Proc.runCommand("change-duration-deactivate", ["pkill", "-f", "systemd-inhibit.*DMS Caffeine"], function(output, exitCode) {
+                var args = [
+                    "systemd-inhibit", 
+                    "--what=idle", 
+                    "--who=DMS Caffeine", 
+                    "--why=Manual stay awake override"
+                ];
+                if (newDuration === "infinity") {
+                    args.push("sleep", "infinity");
+                } else {
+                    args.push("sleep", newDuration);
                 }
-                countdownTimer.restart();
-            } else {
-                if (pluginService) {
-                    pluginService.savePluginState(pluginId, "expiration", 0);
-                }
-            }
+                Quickshell.execDetached(args);
 
-            if (showToasts) {
-                ToastService?.showSuccess(I18n.tr("Duration updated: stay awake for ") + formatDurationLabel(newDuration) + ".")
-            }
+                countdownTimer.stop();
+                if (newDuration !== "infinity") {
+                    var durationSecs = parseInt(newDuration);
+                    globalTimeLeft.set(durationSecs);
+                    var expiration = Date.now() + durationSecs * 1000;
+                    if (pluginService) {
+                        pluginService.savePluginState(pluginId, "expiration", expiration);
+                    }
+                    countdownTimer.restart();
+                } else {
+                    if (pluginService) {
+                        pluginService.savePluginState(pluginId, "expiration", 0);
+                    }
+                }
+
+                if (showToasts && typeof ToastService !== "undefined") {
+                    ToastService.showInfo(I18n.tr("Duration updated: stay awake for ") + formatDurationLabel(newDuration) + ".")
+                }
+            }, 0);
         }
     }
 
-    function toggleCaffeine(duration) {
-        let targetDuration = duration !== undefined ? duration : selectedDuration;
+    function toggleCaffeine(duration, isDefaultTrigger) {
+        var defDur = ((pluginData && pluginData.defaultDuration) ? pluginData.defaultDuration : "infinity").trim().toLowerCase();
+
+        if (isDefaultTrigger === true && defDur === "cycle") {
+            if (globalIsActive.value) {
+                var current = String(selectedDuration);
+                var idx = durationOptions.findIndex(function(o) { return String(o.value) === current; });
+                if (idx === -1) idx = 0;
+                
+                if (idx === durationOptions.length - 1) {
+                    deactivateCaffeine();
+                } else {
+                    var nextDur = durationOptions[idx + 1].value;
+                    changeDuration(nextDur);
+                }
+                return;
+            }
+        }
+
+        var targetDuration = duration !== undefined ? duration : selectedDuration;
+
+        if (isDefaultTrigger === true && defDur !== "cycle" && !globalIsActive.value) {
+            var actualDefault = "infinity";
+            if (defDur !== "infinity" && defDur !== "infinite" && defDur !== "inf" && defDur !== "") {
+                var mins = parseInt(defDur);
+                if (!isNaN(mins) && mins > 0) actualDefault = (mins * 60).toString();
+            }
+            targetDuration = actualDefault;
+        } else if (isDefaultTrigger === true && defDur === "cycle" && !globalIsActive.value) {
+            targetDuration = durationOptions.length > 0 ? durationOptions[0].value : "infinity";
+            selectedDuration = targetDuration;
+            if (pluginService) {
+                pluginService.savePluginData(pluginId, "selectedDuration", targetDuration);
+            }
+        }
+
         if (targetDuration === undefined || targetDuration === null || targetDuration === "undefined" || targetDuration === "") {
             targetDuration = "infinity";
         }
         if (globalIsActive.value) {
-            // Deactivate
-            globalIsActive.set(false); // Set synchronously to avoid race conditions
-            countdownTimer.stop();
-            if (pluginService) {
-                pluginService.savePluginState(pluginId, "expiration", 0);
-            }
-            Proc.runCommand("deactivate-caffeine", ["pkill", "-f", "DMS Caffeine"], function(output, exitCode) {
-                if (showToasts) {
-                    ToastService?.showInfo(I18n.tr("Screen sleep is now allowed."))
-                }
-            })
+            deactivateCaffeine();
         } else {
-            // Activate
-            const args = [
-                "systemd-inhibit", 
-                "--what=idle", 
-                "--who=DMS Caffeine", 
-                "--why=Manual stay awake override"
-            ];
-            if (targetDuration === "infinity") {
-                args.push("sleep", "infinity");
-            } else {
-                args.push("sleep", targetDuration);
-            }
-            Quickshell.execDetached(args);
-            
-            if (targetDuration !== "infinity") {
-                const durationSecs = parseInt(targetDuration);
-                globalTimeLeft.set(durationSecs);
-                const expiration = Date.now() + durationSecs * 1000;
-                if (pluginService) {
-                    pluginService.savePluginState(pluginId, "expiration", expiration);
-                }
-                countdownTimer.restart();
-            } else {
-                if (pluginService) {
-                    pluginService.savePluginState(pluginId, "expiration", 0);
-                }
-            }
-
-            globalIsActive.set(true);
-            
-            if (showToasts) {
-                ToastService?.showSuccess(targetDuration === "infinity" ? I18n.tr("Screen will stay awake.") : I18n.tr("Screen will stay awake for ") + formatDurationLabel(targetDuration) + ".")
-            }
+            activateCaffeine(targetDuration);
         }
     }
 
@@ -698,11 +754,7 @@ PluginComponent {
 
             Loader {
                 width: parent.width
-                asynchronous: true
                 sourceComponent: ccDetailInternal
-                
-                opacity: status === Loader.Ready ? 1 : 0
-                Behavior on opacity { NumberAnimation { duration: 20 } }
             }
         }
     }
