@@ -395,10 +395,10 @@ PluginComponent {
                                 property real blr: isSelected ? pillRadius : (isBottom && isLeft ? outerRadius : innerRadius)
                                 property real brr: isSelected ? pillRadius : (isBottom && isRight ? outerRadius : innerRadius)
 
-                                property real tlrAnim: tlr; Behavior on tlrAnim { NumberAnimation { duration: 300; easing.type: Easing.OutExpo } }
-                                property real trrAnim: trr; Behavior on trrAnim { NumberAnimation { duration: 300; easing.type: Easing.OutExpo } }
-                                property real blrAnim: blr; Behavior on blrAnim { NumberAnimation { duration: 300; easing.type: Easing.OutExpo } }
-                                property real brrAnim: brr; Behavior on brrAnim { NumberAnimation { duration: 300; easing.type: Easing.OutExpo } }
+                                property real tlrAnim: tlr; Behavior on tlrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
+                                property real trrAnim: trr; Behavior on trrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
+                                property real blrAnim: blr; Behavior on blrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
+                                property real brrAnim: brr; Behavior on brrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
 
                                 property color paintColor: {
                                     if (typeof popoutScope !== 'undefined' && popoutScope.activeFocus && popoutScope.currentIndex === index) return Theme.primaryPressed;
@@ -471,7 +471,7 @@ PluginComponent {
                                 font.pixelSize: Theme.fontSizeMedium
                                 font.weight: isSelected ? Font.Bold : Font.Normal
                                 anchors.centerIn: parent
-                                Behavior on color { ColorAnimation { duration: 200 } }
+                                Behavior on color { ColorAnimation { duration: 150 } }
                             }
 
                             Keys.onReturnPressed: event => {

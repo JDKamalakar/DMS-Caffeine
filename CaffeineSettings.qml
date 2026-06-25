@@ -110,8 +110,8 @@ PluginSettings {
                             
                             Behavior on color { ColorAnimation { duration: 150 } }
                             Behavior on border.color { ColorAnimation { duration: 150 } }
-                            Behavior on opacity { NumberAnimation { duration: 250 } }
-                            Behavior on scale { NumberAnimation { duration: 250; easing.type: Easing.OutBack } }
+                            Behavior on opacity { NumberAnimation { duration: 150 } }
+                            Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
 
                             DankRipple { 
                                 id: presetsRip
@@ -188,8 +188,8 @@ PluginSettings {
                             
                             Behavior on color { ColorAnimation { duration: 150 } }
                             Behavior on border.color { ColorAnimation { duration: 150 } }
-                            Behavior on opacity { NumberAnimation { duration: 250 } }
-                            Behavior on scale { NumberAnimation { duration: 250; easing.type: Easing.OutBack } }
+                            Behavior on opacity { NumberAnimation { duration: 150 } }
+                            Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
 
                             DankRipple { 
                                 id: defaultDurationRip
