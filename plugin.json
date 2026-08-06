@@ -20,9 +20,7 @@
   "distro": [
     "any"
   ],
-  "dependencies": [
-    "dms"
-  ],
+  "dependencies": [],
   "screenshot": "https://raw.githubusercontent.com/JDKamalakar/DMS-Caffeine/refs/heads/main/assets/Control-Center_UI.png",
   "permissions": [
     "settings_read",
