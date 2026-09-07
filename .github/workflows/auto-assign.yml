@@ -1,0 +1,34 @@
+name: Auto Assign Issues & PRs
+on:
+  issues:
+    types: [opened]
+  pull_request:
+    types: [opened]
+
+jobs:
+  assign:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Assign to me
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const isPR = !!context.payload.pull_request;
+            const author = context.payload.sender ? context.payload.sender.login : '';
+            const targetUser = 'JDKamalakar';
+
+            // Skip assignment if the PR was created by the target user
+            if (isPR && author === targetUser) {
+              core.info(`Skipping auto-assignment because PR was created by ${author}`);
+              return;
+            }
+
+            await github.rest.issues.addAssignees({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              assignees: [targetUser]
+            });
