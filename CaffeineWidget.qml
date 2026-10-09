@@ -10,19 +10,13 @@ import QtQuick.Shapes
 
 PluginComponent {
     id: root
-    pluginId: "caffeine_redesigned"
+    pluginId: "caffeineRedesigned"
     pluginService: PluginService
 
-    // Reactive states
-    readonly property bool caffeineActive: globalIsActive.value
+    // Reactive states from DMS SessionService
+    readonly property bool caffeineActive: SessionService.idleInhibited
     property string selectedDuration: "infinity"
     readonly property int timeLeft: globalTimeLeft.value
-
-    PluginGlobalVar {
-        id: globalIsActive
-        varName: "isActive"
-        defaultValue: false
-    }
 
     PluginGlobalVar {
         id: globalTimeLeft
@@ -97,32 +91,40 @@ PluginComponent {
     onPluginDataChanged: updateSelectedDuration()
     onDurationOptionsChanged: updateSelectedDuration()
     
-    // Set up initial state on completed in addition to check-caffeine-active
+    // Set up initial state on completed
     Component.onCompleted: {
         updateSelectedDuration();
-        Proc.runCommand("check-caffeine-active", ["pgrep", "-f", "systemd-inhibit.*DMS Caffeine"], function(output, exitCode) {
-            const isActive = (exitCode === 0 && output.trim() !== "");
-            if (isActive) {
-                globalIsActive.set(true);
-                const expiration = pluginService ? pluginService.loadPluginState(pluginId, "expiration", 0) : 0;
-                if (expiration > Date.now()) {
-                    globalTimeLeft.set(Math.round((expiration - Date.now()) / 1000));
-                    countdownTimer.start();
-                }
-            } else {
-                globalIsActive.set(false);
+        if (SessionService.idleInhibited) {
+            const expiration = pluginService ? pluginService.loadPluginState(pluginId, "expiration", 0) : 0;
+            if (expiration > Date.now()) {
+                globalTimeLeft.set(Math.round((expiration - Date.now()) / 1000));
+                countdownTimer.start();
+            }
+        } else {
+            if (pluginService) {
+                pluginService.savePluginState(pluginId, "expiration", 0);
+            }
+        }
+    }
+
+    // Keep timer in sync if idle inhibition is cleared externally
+    Connections {
+        target: SessionService
+        function onIdleInhibitedChanged() {
+            if (!SessionService.idleInhibited) {
+                countdownTimer.stop();
+                globalTimeLeft.set(0);
                 if (pluginService) {
                     pluginService.savePluginState(pluginId, "expiration", 0);
                 }
             }
-        });
+        }
     }
 
     // Control Center Integration
     ccWidgetIcon: "local_cafe"
     ccWidgetPrimaryText: I18n.tr("Caffeine")
     ccWidgetSecondaryText: {
-        // Explicitly depend on caffeineActive, selectedDuration, and timeLeft
         const active = root.caffeineActive;
         const dur = root.selectedDuration;
         const remaining = root.timeLeft;
@@ -138,7 +140,7 @@ PluginComponent {
         const rows = Math.ceil(durationOptions.length / 3);
         const headerCardHeight = 72;
         const pillHeight = 48;
-        const gridSpacing = 4;
+        const gridSpacing = Theme.spacingXS;
         const gridHeight = rows * pillHeight + Math.max(0, rows - 1) * gridSpacing;
         const titleHeight = 20;
         const durationCardHeight = (Theme.spacingM * 2) + titleHeight + Theme.spacingS + gridHeight;
@@ -205,26 +207,43 @@ PluginComponent {
             color: Theme.withAlpha(Theme.surfaceContainerHigh, Theme.popupTransparency)
             border.width: 1
             border.color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.15)
-            height: 72
-            implicitHeight: height
+            implicitHeight: 72
             
             RowLayout {
-                anchors.fill: parent; anchors.margins: Theme.spacingM; spacing: Theme.spacingM
+                anchors.fill: parent
+                anchors.margins: Theme.spacingM
+                spacing: Theme.spacingM
+
                 Rectangle {
-                    width: 42; height: 42; radius: 21
+                    width: Theme.iconSizeSmall * 2.5
+                    height: Theme.iconSizeSmall * 2.5
+                    radius: height / 2
                     color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.2)
-                    DankIcon { name: "local_cafe"; size: 24; color: Theme.surfaceText; anchors.centerIn: parent }
+                    DankIcon {
+                        name: "local_cafe"
+                        size: Theme.iconSize
+                        color: Theme.surfaceText
+                        anchors.centerIn: parent
+                    }
                 }
                 Column {
-                    Layout.fillWidth: true; Layout.alignment: Qt.AlignVCenter; spacing: 0
-                    StyledText { text: I18n.tr("Caffeine"); font.bold: true; font.pixelSize: Theme.fontSizeLarge; color: Theme.surfaceText }
+                    Layout.fillWidth: true
+                    Layout.alignment: Qt.AlignVCenter
+                    spacing: 0
+                    StyledText {
+                        text: I18n.tr("Caffeine")
+                        font.bold: true
+                        font.pixelSize: Theme.fontSizeLarge
+                        color: Theme.surfaceText
+                    }
                     Item {
-                        width: parent.width; height: 16
+                        width: parent.width
+                        height: 16
                         StyledText {
                             id: modeTxt
                             width: parent.width
                             text: root.caffeineActive ? I18n.tr("Active") : I18n.tr("Inactive")
-                            font.pixelSize: Theme.fontSizeSmall - 1
+                            font.pixelSize: Theme.fontSizeSmall
                             color: Theme.primary
                             opacity: 0.85
 
@@ -246,7 +265,8 @@ PluginComponent {
                 }
                 Item {
                     id: toggleBtn
-                    height: 38; width: 105
+                    height: 38
+                    width: 105
                     Layout.alignment: Qt.AlignVCenter
                     
                     scale: toggleArea.pressed ? 0.9 : (toggleArea.containsMouse ? 1.05 : 1.0)
@@ -278,12 +298,12 @@ PluginComponent {
 
                     Row {
                         anchors.centerIn: parent
-                        spacing: 8
+                        spacing: Theme.spacingS
                         
                         DankIcon {
                             id: toggleBtnIcon
                             name: "power_settings_new"
-                            size: 18
+                            size: Theme.iconSizeSmall
                             color: Theme.primary
                             
                             SequentialAnimation {
@@ -321,8 +341,7 @@ PluginComponent {
         id: durationGridComponent
         StyledRect {
             id: gridRoot
-            height: durationCol.implicitHeight + Theme.spacingM * 2
-            implicitHeight: height
+            implicitHeight: durationCol.implicitHeight + Theme.spacingM * 2
             radius: Theme.cornerRadius
             color: Theme.withAlpha(Theme.surfaceContainerHigh, Theme.popupTransparency)
             border.width: 1
@@ -336,17 +355,29 @@ PluginComponent {
                 spacing: Theme.spacingS
 
                 RowLayout {
-                    anchors.left: parent.left; anchors.right: parent.right
-                    anchors.leftMargin: 4; anchors.rightMargin: 4
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.leftMargin: Theme.spacingXS
+                    anchors.rightMargin: Theme.spacingXS
                     spacing: Theme.spacingXS
-                    DankIcon { name: "timer"; size: 14; color: Theme.surfaceText }
-                    StyledText { text: I18n.tr("Keep Awake Duration"); font.pixelSize: Theme.fontSizeSmall; font.weight: Font.Bold; color: Theme.surfaceText; Layout.fillWidth: true }
+                    DankIcon {
+                        name: "timer"
+                        size: Theme.iconSizeSmall
+                        color: Theme.surfaceText
+                    }
+                    StyledText {
+                        text: I18n.tr("Keep Awake Duration")
+                        font.pixelSize: Theme.fontSizeSmall
+                        font.weight: Font.Bold
+                        color: Theme.surfaceText
+                        Layout.fillWidth: true
+                    }
                 }
 
                 Flow {
                     id: durationGrid
                     width: parent.width
-                    spacing: 4
+                    spacing: Theme.spacingXS
 
                     Repeater {
                         model: root.durationOptions
@@ -386,8 +417,8 @@ PluginComponent {
                                 readonly property bool isLeft: c === 0
                                 readonly property bool isRight: c === cols - 1 || index === total - 1
                                 
-                                property real innerRadius: 6
-                                property real outerRadius: 12
+                                property real innerRadius: Theme.cornerRadius / 2
+                                property real outerRadius: Theme.cornerRadius
                                 
                                 property real pillRadius: Math.floor((height - 1) / 2)
                                 property real tlr: isSelected ? pillRadius : (isTop && isLeft ? outerRadius : innerRadius)
@@ -435,13 +466,21 @@ PluginComponent {
                                 }
                                 
                                 Rectangle { 
-                                    anchors.fill: parent; radius: parent.tlrAnim; color: "white"
+                                    anchors.fill: parent
+                                    radius: parent.tlrAnim
+                                    color: Theme.surfaceText
                                     anchors.margins: 0.5
-                                    opacity: hovered ? 0.05 : 0; Behavior on opacity { NumberAnimation { duration: 150 } } 
+                                    opacity: hovered ? 0.05 : 0
+                                    Behavior on opacity { NumberAnimation { duration: 150 } } 
                                 }
                             }
 
-                            DankRipple { id: optionRipple; anchors.fill: parent; cornerRadius: durationBg.tlrAnim; rippleColor: Theme.primary }
+                            DankRipple {
+                                id: optionRipple
+                                anchors.fill: parent
+                                cornerRadius: durationBg.tlrAnim
+                                rippleColor: Theme.primary
+                            }
 
                             MouseArea {
                                 id: optionMouseArea
@@ -494,8 +533,6 @@ PluginComponent {
             }
         }
     }
-
-
 
     // Popout content: duration selector grid
     popoutContent: Component {
@@ -586,12 +623,10 @@ PluginComponent {
             globalTimeLeft.set(globalTimeLeft.value - 1);
             if (globalTimeLeft.value <= 0) {
                 countdownTimer.stop();
-                toggleCaffeine(undefined, false); // Turn off caffeine
+                deactivateCaffeine();
             }
         }
     }
-
-
 
     function formatDurationLabel(dur) {
         if (dur === "infinity") return I18n.tr("indefinitely");
@@ -607,50 +642,44 @@ PluginComponent {
     }
 
     function deactivateCaffeine() {
-        globalIsActive.set(false);
         countdownTimer.stop();
+        globalTimeLeft.set(0);
         if (pluginService) {
             pluginService.savePluginState(pluginId, "expiration", 0);
         }
-        Proc.runCommand("deactivate-caffeine", ["pkill", "-f", "systemd-inhibit.*DMS Caffeine"], function(output, exitCode) {
-            if (showToasts && typeof ToastService !== "undefined") {
-                ToastService.showInfo(I18n.tr("Screen sleep is now allowed."))
-            }
-        });
+        if (typeof SessionService !== "undefined" && SessionService.disableIdleInhibit) {
+            SessionService.disableIdleInhibit();
+        }
+        if (showToasts && typeof ToastService !== "undefined") {
+            ToastService.showInfo(I18n.tr("Screen sleep is now allowed."));
+        }
     }
 
     function activateCaffeine(targetDuration) {
-        var args = [
-            "systemd-inhibit", 
-            "--what=idle", 
-            "--who=DMS Caffeine", 
-            "--why=Manual stay awake override"
-        ];
-        if (targetDuration === "infinity") {
-            args.push("sleep", "infinity");
-        } else {
-            args.push("sleep", targetDuration);
-        }
-        Quickshell.execDetached(args);
-        
+        let durationMinutes = 0;
         if (targetDuration !== "infinity") {
-            var durationSecs = parseInt(targetDuration);
+            const durationSecs = parseInt(targetDuration);
+            durationMinutes = Math.round(durationSecs / 60);
             globalTimeLeft.set(durationSecs);
-            var expiration = Date.now() + durationSecs * 1000;
+            const expiration = Date.now() + durationSecs * 1000;
             if (pluginService) {
                 pluginService.savePluginState(pluginId, "expiration", expiration);
             }
             countdownTimer.restart();
         } else {
+            globalTimeLeft.set(0);
             if (pluginService) {
                 pluginService.savePluginState(pluginId, "expiration", 0);
             }
+            countdownTimer.stop();
         }
 
-        globalIsActive.set(true);
+        if (typeof SessionService !== "undefined" && SessionService.enableIdleInhibit) {
+            SessionService.enableIdleInhibit(durationMinutes);
+        }
         
         if (showToasts && typeof ToastService !== "undefined") {
-            ToastService.showInfo(targetDuration === "infinity" ? I18n.tr("Screen will stay awake.") : I18n.tr("Screen will stay awake for ") + formatDurationLabel(targetDuration) + ".")
+            ToastService.showInfo(targetDuration === "infinity" ? I18n.tr("Screen will stay awake.") : I18n.tr("Screen will stay awake for ") + formatDurationLabel(targetDuration) + ".");
         }
     }
 
@@ -662,39 +691,10 @@ PluginComponent {
         }
 
         if (caffeineActive) {
-            Proc.runCommand("change-duration-deactivate", ["pkill", "-f", "systemd-inhibit.*DMS Caffeine"], function(output, exitCode) {
-                var args = [
-                    "systemd-inhibit", 
-                    "--what=idle", 
-                    "--who=DMS Caffeine", 
-                    "--why=Manual stay awake override"
-                ];
-                if (newDuration === "infinity") {
-                    args.push("sleep", "infinity");
-                } else {
-                    args.push("sleep", newDuration);
-                }
-                Quickshell.execDetached(args);
-
-                countdownTimer.stop();
-                if (newDuration !== "infinity") {
-                    var durationSecs = parseInt(newDuration);
-                    globalTimeLeft.set(durationSecs);
-                    var expiration = Date.now() + durationSecs * 1000;
-                    if (pluginService) {
-                        pluginService.savePluginState(pluginId, "expiration", expiration);
-                    }
-                    countdownTimer.restart();
-                } else {
-                    if (pluginService) {
-                        pluginService.savePluginState(pluginId, "expiration", 0);
-                    }
-                }
-
-                if (showToasts && typeof ToastService !== "undefined") {
-                    ToastService.showInfo(I18n.tr("Duration updated: stay awake for ") + formatDurationLabel(newDuration) + ".")
-                }
-            }, 0);
+            activateCaffeine(newDuration);
+            if (showToasts && typeof ToastService !== "undefined") {
+                ToastService.showInfo(I18n.tr("Duration updated: stay awake for ") + formatDurationLabel(newDuration) + ".");
+            }
         }
     }
 
@@ -702,7 +702,7 @@ PluginComponent {
         var defDur = ((pluginData && pluginData.defaultDuration) ? pluginData.defaultDuration : "infinity").trim().toLowerCase();
 
         if (isDefaultTrigger === true && defDur === "cycle") {
-            if (globalIsActive.value) {
+            if (root.caffeineActive) {
                 var current = String(selectedDuration);
                 var idx = durationOptions.findIndex(function(o) { return String(o.value) === current; });
                 if (idx === -1) idx = 0;
@@ -719,14 +719,14 @@ PluginComponent {
 
         var targetDuration = duration !== undefined ? duration : selectedDuration;
 
-        if (isDefaultTrigger === true && defDur !== "cycle" && !globalIsActive.value) {
+        if (isDefaultTrigger === true && defDur !== "cycle" && !root.caffeineActive) {
             var actualDefault = "infinity";
             if (defDur !== "infinity" && defDur !== "infinite" && defDur !== "inf" && defDur !== "") {
                 var mins = parseInt(defDur);
                 if (!isNaN(mins) && mins > 0) actualDefault = (mins * 60).toString();
             }
             targetDuration = actualDefault;
-        } else if (isDefaultTrigger === true && defDur === "cycle" && !globalIsActive.value) {
+        } else if (isDefaultTrigger === true && defDur === "cycle" && !root.caffeineActive) {
             targetDuration = durationOptions.length > 0 ? durationOptions[0].value : "infinity";
             selectedDuration = targetDuration;
             if (pluginService) {
@@ -737,7 +737,7 @@ PluginComponent {
         if (targetDuration === undefined || targetDuration === null || targetDuration === "undefined" || targetDuration === "") {
             targetDuration = "infinity";
         }
-        if (globalIsActive.value) {
+        if (root.caffeineActive) {
             deactivateCaffeine();
         } else {
             activateCaffeine(targetDuration);
@@ -745,40 +745,31 @@ PluginComponent {
     }
 
     ccDetailContent: Component {
-        ScrollView {
+        DankFlickable {
             width: parent.width
             height: parent.height
-            clip: false
-            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-            ScrollBar.vertical.policy: ScrollBar.AlwaysOff
+            contentWidth: width
+            contentHeight: ccDetailCol.implicitHeight
 
-            Loader {
+            Column {
+                id: ccDetailCol
                 width: parent.width
-                sourceComponent: ccDetailInternal
-            }
-        }
-    }
+                padding: Theme.spacingM
+                spacing: Theme.spacingM
 
-    Component {
-        id: ccDetailInternal
-        Column {
-            id: ccDetailCol
-            width: parent.width
-            padding: Theme.spacingM
-            spacing: Theme.spacingM
+                // --- Caffeine Header Card ---
+                Loader {
+                    width: Math.max(0, parent.width - Theme.spacingM * 2)
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    sourceComponent: caffeineHeaderComponent
+                }
 
-            // --- Caffeine Header Card ---
-            Loader {
-                width: Math.max(0, parent.width - Theme.spacingM * 2)
-                anchors.horizontalCenter: parent.horizontalCenter
-                sourceComponent: caffeineHeaderComponent
-            }
-
-            // --- Duration Grid Section ---
-            Loader {
-                width: Math.max(0, parent.width - Theme.spacingM * 2)
-                anchors.horizontalCenter: parent.horizontalCenter
-                sourceComponent: durationGridComponent
+                // --- Duration Grid Section ---
+                Loader {
+                    width: Math.max(0, parent.width - Theme.spacingM * 2)
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    sourceComponent: durationGridComponent
+                }
             }
         }
     }
