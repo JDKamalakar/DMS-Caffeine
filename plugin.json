@@ -3,7 +3,7 @@
   "name": "Caffeine Redesigned",
   "description": "Keep your screen awake and prevent system idle sleep with customizable timed presets and quick Control Center integration.",
   "category": "utilities",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "author": "JDKamalakar",
   "icon": "local_cafe",
   "type": "widget",
@@ -20,9 +20,13 @@
   "distro": [
     "any"
   ],
-  "dependencies": [],
+  "dependencies": [
+    "systemd",
+    "python3"
+  ],
   "screenshot": "https://raw.githubusercontent.com/JDKamalakar/DMS-Caffeine/refs/heads/main/assets/POP-Up_UI.png",
   "permissions": [
+    "process",
     "settings_read",
     "settings_write"
   ]

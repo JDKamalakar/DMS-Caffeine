@@ -7,16 +7,35 @@ import qs.Modules.Plugins
 import QtQuick.Layouts
 import QtQuick.Controls
 import QtQuick.Shapes
+import "."
 
 PluginComponent {
     id: root
     pluginId: "caffeineRedesigned"
     pluginService: PluginService
 
+    property string variantId: ""
+    property var variantData: null
+    readonly property bool isStatusWidgetVariant: variantId === "status_timer" || variantId === "status_widget" || (variantData && variantData.widgetDisplayMode === "status_timer")
+    readonly property bool isBarVertical: (typeof isVertical !== "undefined" && isVertical) || (axis && axis.isVertical)
+
     // Reactive states from DMS SessionService
     readonly property bool caffeineActive: SessionService.idleInhibited
-    property string selectedDuration: "infinity"
+    property string selectedDuration: {
+        if (caffeineActive) {
+            return (globalSelectedDuration.value && globalSelectedDuration.value !== "undefined" && globalSelectedDuration.value !== "")
+                ? globalSelectedDuration.value
+                : "infinity";
+        }
+        return getDefaultConfiguredDuration();
+    }
+    readonly property string currentDuration: selectedDuration
     readonly property int timeLeft: globalTimeLeft.value
+    readonly property int totalDuration: globalTotalDuration.value
+
+    // Auto-hide when caffeine is inactive for the Live Caffeine widget
+    visibilityCommand: isStatusWidgetVariant ? (caffeineActive ? "true" : "false") : ""
+    conditionVisible: isStatusWidgetVariant ? caffeineActive : true
 
     PluginGlobalVar {
         id: globalTimeLeft
@@ -24,11 +43,41 @@ PluginComponent {
         defaultValue: 0
     }
 
+    PluginGlobalVar {
+        id: globalTotalDuration
+        varName: "totalDuration"
+        defaultValue: 0
+    }
+
+    PluginGlobalVar {
+        id: globalSelectedDuration
+        varName: "selectedDuration"
+        defaultValue: "infinity"
+    }
+
     // Sync settings
     property bool showToasts: {
         if (!pluginData) return true;
         var val = pluginData.showToasts;
         return val === undefined || val === null ? true : (val === true || val === "true");
+    }
+
+    property bool colorfulProgress: {
+        if (!pluginData) return false;
+        var val = pluginData.colorfulProgress;
+        return val === undefined || val === null ? false : (val === true || val === "true");
+    }
+
+    readonly property real osdOpacity: {
+        if (!pluginData) return 0.85;
+        var val = parseFloat(pluginData.osdOpacity !== undefined ? pluginData.osdOpacity : pluginData.backgroundOpacity);
+        return (!isNaN(val) && val > 0) ? Math.max(0.10, Math.min(1.00, val)) : 0.85;
+    }
+
+    readonly property int quickExtendMinutes: {
+        if (!pluginData) return 5;
+        var val = parseInt(pluginData.quickExtendMinutes);
+        return (!isNaN(val) && val > 0) ? val : 5;
     }
 
     property var durationOptions: {
@@ -67,57 +116,82 @@ PluginComponent {
         ];
     }
 
-    function updateSelectedDuration() {
-        if (pluginData && pluginData.selectedDuration !== undefined && pluginData.selectedDuration !== null && pluginData.selectedDuration !== "undefined" && pluginData.selectedDuration !== "") {
-            selectedDuration = pluginData.selectedDuration;
+    function getDefaultConfiguredDuration() {
+        var def = (pluginData && pluginData.defaultDuration) ? pluginData.defaultDuration : "infinity";
+        def = def.trim().toLowerCase();
+        if (def === "cycle") {
+            return "300"; // In cycle mode, default is 5 mins
+        } else if (def === "infinity" || def === "infinite" || def === "inf" || def === "") {
+            return "infinity";
         } else {
-            var def = (pluginData && pluginData.defaultDuration) ? pluginData.defaultDuration : "infinity";
-            def = def.trim().toLowerCase();
-            if (def === "cycle") {
-                selectedDuration = durationOptions.length > 0 ? durationOptions[0].value : "infinity";
-            } else if (def === "infinity" || def === "infinite" || def === "inf" || def === "") {
-                selectedDuration = "infinity";
-            } else {
-                var mins = parseInt(def);
-                if (!isNaN(mins) && mins > 0) {
-                    selectedDuration = (mins * 60).toString();
-                } else {
-                    selectedDuration = "infinity";
-                }
-            }
+            var mins = parseInt(def);
+            return (!isNaN(mins) && mins > 0) ? (mins * 60).toString() : "infinity";
         }
     }
 
-    onPluginDataChanged: updateSelectedDuration()
+    function updateSelectedDuration() {
+        var defaultDur = getDefaultConfiguredDuration();
+        if (root.caffeineActive) {
+            // While active, preserve the currently active duration
+            var activeDur = (globalSelectedDuration.value && globalSelectedDuration.value !== "undefined" && globalSelectedDuration.value !== "") 
+                ? globalSelectedDuration.value 
+                : ((pluginData && pluginData.selectedDuration) ? pluginData.selectedDuration : defaultDur);
+            selectedDuration = activeDur;
+            globalSelectedDuration.set(activeDur);
+        } else {
+            // When OFF, stage the default configured duration
+            selectedDuration = defaultDur;
+        }
+    }
+
+    function updateVariantData() {
+        if (root.variantId && Array.isArray(pluginData?.variants) && pluginData.variants.length) {
+            root.variantData = pluginData.variants.find(function(v) { return v && v.id === root.variantId; }) || root.variantData;
+        }
+    }
+
+    onPluginDataChanged: {
+        updateVariantData();
+        updateSelectedDuration();
+    }
     onDurationOptionsChanged: updateSelectedDuration()
     
     // Set up initial state on completed
     Component.onCompleted: {
+        updateVariantData();
         updateSelectedDuration();
         if (SessionService.idleInhibited) {
             const expiration = pluginService ? pluginService.loadPluginState(pluginId, "expiration", 0) : 0;
+            const savedTotal = pluginService ? pluginService.loadPluginState(pluginId, "totalDuration", 0) : 0;
             if (expiration > Date.now()) {
-                globalTimeLeft.set(Math.round((expiration - Date.now()) / 1000));
+                const rem = Math.round((expiration - Date.now()) / 1000);
+                globalTimeLeft.set(rem);
+                globalTotalDuration.set(savedTotal > 0 ? savedTotal : rem);
                 countdownTimer.start();
             }
         } else {
             if (pluginService) {
                 pluginService.savePluginState(pluginId, "expiration", 0);
+                pluginService.savePluginState(pluginId, "totalDuration", 0);
             }
+            globalTotalDuration.set(0);
         }
     }
 
-    // Keep timer in sync if idle inhibition is cleared externally
+    // Keep timer and selection in sync when idle inhibition changes
     Connections {
         target: SessionService
         function onIdleInhibitedChanged() {
             if (!SessionService.idleInhibited) {
                 countdownTimer.stop();
                 globalTimeLeft.set(0);
+                globalTotalDuration.set(0);
                 if (pluginService) {
                     pluginService.savePluginState(pluginId, "expiration", 0);
+                    pluginService.savePluginState(pluginId, "totalDuration", 0);
                 }
             }
+            root.updateSelectedDuration();
         }
     }
 
@@ -147,42 +221,284 @@ PluginComponent {
         return Theme.spacingM + headerCardHeight + Theme.spacingM + durationCardHeight + Theme.spacingM;
     }
 
+    // Formatted countdown string for timer display (e.g. "1h 45m" or "45m 20s" or "∞")
+    readonly property string formattedTimeLeft: {
+        if (!caffeineActive) return I18n.tr("Off");
+        if (selectedDuration === "infinity" || selectedDuration === "undefined" || !selectedDuration) return I18n.tr("Indefinite");
+        const totalSecs = root.timeLeft;
+        if (totalSecs <= 0) return I18n.tr("Active");
+        const hrs = Math.floor(totalSecs / 3600);
+        const mins = Math.floor((totalSecs % 3600) / 60);
+        const secs = totalSecs % 60;
+        if (hrs > 0) {
+            return mins > 0 ? (hrs + "h " + mins + "m") : (hrs + "h");
+        }
+        if (mins > 0) {
+            return secs > 0 ? (mins + "m " + secs + "s") : (mins + "m");
+        }
+        return secs + "s";
+    }
+
+    // Standard widget pill color: follows standard theme primary / surfaceText
     readonly property color pillColor: caffeineActive ? Theme.primary : Theme.surfaceText
 
+    // Live widget pill color: follows colorfulProgress setting (green -> amber -> red) when active
+    readonly property color livePillColor: {
+        if (!caffeineActive) return Theme.primary;
+        if (!colorfulProgress) return Theme.primary;
+        if (selectedDuration === "infinity") return Qt.rgba(0.20, 0.78, 0.35, 1.0); // Vivid Emerald Green
+        // Dynamic color transition based on remaining time ratio:
+        // Green when plenty of time remaining, Amber mid-way, Red when low time remaining
+        let remRatio = 1.0 - sessionProgress;
+        if (remRatio >= 0.50) {
+            let t = (remRatio - 0.50) / 0.50;
+            return Qt.rgba(1.0 - 0.82 * t, 0.70 + 0.10 * t, 0.0 + 0.44 * t, 1.0);
+        } else if (remRatio >= 0.20) {
+            let t = (remRatio - 0.20) / 0.30;
+            return Qt.rgba(1.0, 0.34 + 0.36 * t, 0.13 - 0.13 * t, 1.0);
+        } else {
+            return Qt.rgba(0.96, 0.26, 0.21, 1.0);
+        }
+    }
+
+    // Progress ratio (0.0 to 1.0) of elapsed time for timed sessions
+    readonly property real rawSessionProgress: {
+        if (!caffeineActive || selectedDuration === "infinity" || totalDuration <= 0) return 0.0;
+        const elapsed = Math.max(0, totalDuration - timeLeft);
+        return Math.min(1.0, Math.max(0.0, elapsed / totalDuration));
+    }
+    property real sessionProgress: rawSessionProgress
+    Behavior on sessionProgress {
+        NumberAnimation {
+            duration: 650
+            easing.type: Easing.OutCubic
+        }
+    }
+
     horizontalBarPill: Component {
-        Row {
-            spacing: caffeineActive ? Theme.spacingS : 0
-            DankIcon {
-                name: "local_cafe"
-                size: Theme.iconSizeSmall
-                color: root.pillColor
+        Item {
+            id: hPillItem
+            implicitHeight: Theme.iconSizeSmall + 4
+            implicitWidth: root.isStatusWidgetVariant ? liveHRow.implicitWidth : standardHRow.implicitWidth
+
+            // --- Standard Widget Pill Layout ---
+            Row {
+                id: standardHRow
+                visible: !root.isStatusWidgetVariant
+                spacing: Theme.spacingS
                 anchors.verticalCenter: parent.verticalCenter
+
+                DankIcon {
+                    name: "local_cafe"
+                    size: Theme.iconSizeSmall
+                    color: root.pillColor
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+
+                Item {
+                    id: hTextContainer
+                    anchors.verticalCenter: parent.verticalCenter
+                    clip: true
+                    height: hText.implicitHeight
+                    width: (root.caffeineActive && root.ccWidgetSecondaryText !== "") ? hText.implicitWidth : 0
+                    opacity: width > 0 ? 1 : 0
+
+                    Behavior on width {
+                        NumberAnimation {
+                            duration: Theme.mediumDuration
+                            easing.type: Theme.standardEasing
+                        }
+                    }
+                    Behavior on opacity {
+                        NumberAnimation {
+                            duration: Theme.shortDuration
+                            easing.type: Theme.standardEasing
+                        }
+                    }
+
+                    StyledText {
+                        id: hText
+                        anchors.left: parent.left
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: root.ccWidgetSecondaryText
+                        color: root.pillColor
+                        font.pixelSize: Theme.fontSizeMedium
+                        font.weight: Font.Normal
+                    }
+                }
             }
-            StyledText {
-                text: root.ccWidgetSecondaryText
-                color: root.pillColor
-                font.pixelSize: Theme.fontSizeMedium
+
+            // --- Live Widget Android-Style Dynamic Chip ---
+            Row {
+                id: liveHRow
+                visible: root.isStatusWidgetVariant
+                spacing: Theme.spacingS
                 anchors.verticalCenter: parent.verticalCenter
-                visible: caffeineActive
+
+                // Dynamic Live Status Indicator (Solid Pill Capsule)
+                Rectangle {
+                    anchors.verticalCenter: parent.verticalCenter
+                    height: 26
+                    radius: 13
+                    color: root.livePillColor
+                    Behavior on color { ColorAnimation { duration: 250 } }
+                    implicitWidth: liveChipRow.implicitWidth + 18
+
+                    // Subtle pulsating breath animation for active stay-awake
+                    SequentialAnimation on opacity {
+                        running: root.caffeineActive
+                        loops: Animation.Infinite
+                        NumberAnimation { to: 0.90; duration: 1200; easing.type: Easing.InOutQuad }
+                        NumberAnimation { to: 1.0; duration: 1200; easing.type: Easing.InOutQuad }
+                    }
+
+                    Row {
+                        id: liveChipRow
+                        anchors.centerIn: parent
+                        spacing: 6
+
+                        DankIcon {
+                            name: "local_cafe"
+                            size: 15
+                            color: Theme.surfaceContainerHighest
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+
+                        StyledText {
+                            text: root.formattedTimeLeft
+                            color: Theme.surfaceContainerHighest
+                            font.pixelSize: Theme.fontSizeSmall
+                            font.weight: Font.DemiBold
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                    }
+                }
             }
         }
     }
 
     verticalBarPill: Component {
-        Column {
-            spacing: caffeineActive ? Theme.spacingXS : 0
-            DankIcon {
-                name: "local_cafe"
-                size: Theme.iconSizeSmall
-                color: root.pillColor
+        Item {
+            id: vPillItem
+            implicitWidth: root.isStatusWidgetVariant ? liveVCol.implicitWidth : standardVCol.implicitWidth
+            implicitHeight: root.isStatusWidgetVariant ? liveVCol.implicitHeight : standardVCol.implicitHeight
+
+            // --- Standard Widget Vertical Layout ---
+            Column {
+                id: standardVCol
+                visible: !root.isStatusWidgetVariant
+                spacing: Theme.spacingXS
                 anchors.horizontalCenter: parent.horizontalCenter
+
+                DankIcon {
+                    name: "local_cafe"
+                    size: Theme.iconSizeSmall
+                    color: root.pillColor
+                    anchors.horizontalCenter: parent.horizontalCenter
+                }
+
+                Item {
+                    id: vTextContainer
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    clip: true
+                    width: vText.implicitWidth
+                    height: (root.caffeineActive && vText.text !== "") ? vText.implicitHeight : 0
+                    opacity: height > 0 ? 1 : 0
+
+                    Behavior on height {
+                        NumberAnimation {
+                            duration: Theme.mediumDuration
+                            easing.type: Theme.standardEasing
+                        }
+                    }
+                    Behavior on opacity {
+                        NumberAnimation {
+                            duration: Theme.shortDuration
+                            easing.type: Theme.standardEasing
+                        }
+                    }
+
+                    StyledText {
+                        id: vText
+                        anchors.top: parent.top
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        text: (root.selectedDuration === "infinity" || root.selectedDuration === "undefined" || !root.selectedDuration) ? "∞" : root.ccWidgetSecondaryText
+                        color: root.pillColor
+                        font.pixelSize: Theme.fontSizeSmall
+                        font.weight: Font.Normal
+                    }
+                }
             }
-            StyledText {
-                text: (root.selectedDuration === "infinity" || root.selectedDuration === "undefined" || !root.selectedDuration) ? "∞" : root.ccWidgetSecondaryText
-                color: root.pillColor
-                font.pixelSize: Theme.fontSizeSmall
+
+            // --- Live Widget Android-Style Vertical Chip ---
+            Rectangle {
+                id: liveVCol
+                visible: root.isStatusWidgetVariant
                 anchors.horizontalCenter: parent.horizontalCenter
-                visible: caffeineActive
+                width: 28
+                implicitWidth: width
+                height: liveVContent.implicitHeight + 14
+                implicitHeight: height
+                radius: width / 2
+                color: root.livePillColor
+                Behavior on color { ColorAnimation { duration: 250 } }
+
+                SequentialAnimation on opacity {
+                    running: root.caffeineActive
+                    loops: Animation.Infinite
+                    NumberAnimation { to: 0.90; duration: 1200; easing.type: Easing.InOutQuad }
+                    NumberAnimation { to: 1.0; duration: 1200; easing.type: Easing.InOutQuad }
+                }
+
+                Column {
+                    id: liveVContent
+                    anchors.centerIn: parent
+                    spacing: 4
+
+                    DankIcon {
+                        name: "local_cafe"
+                        size: 14
+                        color: Theme.surfaceContainerHighest
+                        anchors.horizontalCenter: parent.horizontalCenter
+                    }
+
+                    // Stacked time components for vertical bar with clean typography & spacing
+                    StyledText {
+                        visible: root.caffeineActive && root.selectedDuration === "infinity"
+                        text: "∞"
+                        color: Theme.surfaceContainerHighest
+                        font.pixelSize: Theme.fontSizeSmall
+                        font.weight: Font.DemiBold
+                        anchors.horizontalCenter: parent.horizontalCenter
+                    }
+
+                    StyledText {
+                        visible: root.caffeineActive && root.selectedDuration !== "infinity" && root.timeLeft > 0 && Math.floor(root.timeLeft / 3600) > 0
+                        text: Math.floor(root.timeLeft / 3600) + "h"
+                        color: Theme.surfaceContainerHighest
+                        font.pixelSize: 10
+                        font.weight: Font.DemiBold
+                        anchors.horizontalCenter: parent.horizontalCenter
+                    }
+
+                    StyledText {
+                        visible: root.caffeineActive && root.selectedDuration !== "infinity" && root.timeLeft > 0 && (Math.floor((root.timeLeft % 3600) / 60) > 0 || Math.floor(root.timeLeft / 3600) > 0)
+                        text: Math.floor((root.timeLeft % 3600) / 60) + "m"
+                        color: Theme.surfaceContainerHighest
+                        font.pixelSize: 10
+                        font.weight: Font.DemiBold
+                        anchors.horizontalCenter: parent.horizontalCenter
+                    }
+
+                    StyledText {
+                        visible: root.caffeineActive && root.selectedDuration !== "infinity" && (root.timeLeft % 60 > 0 || root.timeLeft <= 0)
+                        text: Math.max(0, root.timeLeft % 60) + "s"
+                        color: Theme.surfaceContainerHighest
+                        font.pixelSize: 10
+                        font.weight: Font.DemiBold
+                        anchors.horizontalCenter: parent.horizontalCenter
+                    }
+                }
             }
         }
     }
@@ -195,9 +511,22 @@ PluginComponent {
         toggleCaffeine(undefined, true);
     }
 
+    property bool customInputExpanded: false
+
     // Popout dimensions
-    popoutWidth: 340
+    popoutWidth: {
+        if (!root.isStatusWidgetVariant) return 340;
+        return root.isBarVertical ? 380 : 360;
+    }
     popoutHeight: 0 // auto from content
+
+    // Live Caffeine Popout Component (Cleanly delegated to LiveCaffeinePopout.qml)
+    Component {
+        id: liveNotificationCardComponent
+        LiveCaffeinePopout {
+            rootPlugin: root
+        }
+    }
 
     Component {
         id: caffeineHeaderComponent
@@ -373,16 +702,19 @@ PluginComponent {
                         Layout.fillWidth: true
                     }
                 }
-
                 Flow {
                     id: durationGrid
                     width: parent.width
                     spacing: Theme.spacingXS
 
+                    readonly property string activeTargetValue: String(root.selectedDuration)
+
                     Repeater {
+                        id: durationRepeater
                         model: root.durationOptions
 
                         delegate: Item {
+                            id: optionDelegateItem
                             required property var modelData
                             required property int index
 
@@ -405,7 +737,7 @@ PluginComponent {
                             }
                             height: 48
                             
-                            readonly property bool isSelected: String(root.selectedDuration) === String(modelData.value)
+                            readonly property bool isSelected: String(modelData.value) === durationGrid.activeTargetValue
                             readonly property bool hovered: optionMouseArea.containsMouse
                             
                             Shape {
@@ -426,32 +758,32 @@ PluginComponent {
                                 property real blr: isSelected ? pillRadius : (isBottom && isLeft ? outerRadius : innerRadius)
                                 property real brr: isSelected ? pillRadius : (isBottom && isRight ? outerRadius : innerRadius)
 
-                                property real tlrAnim: tlr; Behavior on tlrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
-                                property real trrAnim: trr; Behavior on trrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
-                                property real blrAnim: blr; Behavior on blrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
-                                property real brrAnim: brr; Behavior on brrAnim { NumberAnimation { duration: 600; easing.type: Easing.OutExpo } }
+                                property real tlrAnim: tlr; Behavior on tlrAnim { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
+                                property real trrAnim: trr; Behavior on trrAnim { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
+                                property real blrAnim: blr; Behavior on blrAnim { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
+                                property real brrAnim: brr; Behavior on brrAnim { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
 
                                 property color paintColor: {
-                                    if (typeof popoutScope !== 'undefined' && popoutScope.activeFocus && popoutScope.currentIndex === index) return Theme.primaryPressed;
+                                    if (typeof popoutScope !== "undefined" && popoutScope.activeFocus && popoutScope.currentIndex === index) return Theme.primaryPressed;
                                     return isSelected
-                                        ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.18)
+                                        ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.22)
                                         : (hovered
                                             ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.1)
-                                            : Qt.rgba(Theme.secondary.r, Theme.secondary.g, Theme.secondary.b, 0.04))
+                                            : Qt.rgba(Theme.secondary.r, Theme.secondary.g, Theme.secondary.b, 0.04));
                                 }
-                                Behavior on paintColor { ColorAnimation { duration: 150 } }
+                                Behavior on paintColor { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                 
                                 property color paintBorder: isSelected
-                                    ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.6)
+                                    ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.75)
                                     : (hovered
                                         ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.4)
-                                        : Qt.rgba(Theme.secondary.r, Theme.secondary.g, Theme.secondary.b, 0.15))
-                                Behavior on paintBorder { ColorAnimation { duration: 150 } }
+                                        : Qt.rgba(Theme.secondary.r, Theme.secondary.g, Theme.secondary.b, 0.15));
+                                Behavior on paintBorder { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                                 ShapePath {
                                     fillColor: durationBg.paintColor
                                     strokeColor: durationBg.paintBorder
-                                    strokeWidth: 1
+                                    strokeWidth: 1.5
                                     
                                     startX: 0.5 + durationBg.tlrAnim
                                     startY: 0.5
@@ -489,17 +821,18 @@ PluginComponent {
                                 cursorShape: Qt.PointingHandCursor
                                 onPressed: mouse => { optionRipple.trigger(mouse.x, mouse.y); }
                                 onClicked: {
-                                    if (typeof popoutScope !== 'undefined') popoutScope.currentIndex = index
-                                    const isSel = String(root.selectedDuration) === String(modelData.value)
-                                    if (isSel) {
-                                        root.toggleCaffeine(modelData.value, false)
-                                        if (typeof popoutScope !== 'undefined') closePopout()
-                                    } else {
-                                        root.changeDuration(modelData.value)
-                                        if (!root.caffeineActive) {
-                                            root.toggleCaffeine(modelData.value, false)
-                                            if (typeof popoutScope !== 'undefined') closePopout()
+                                    if (typeof popoutScope !== "undefined") popoutScope.currentIndex = index;
+                                    const targetVal = String(modelData.value);
+                                    if (root.caffeineActive) {
+                                        if (String(root.selectedDuration) === targetVal) {
+                                            root.deactivateCaffeine();
+                                            if (typeof popoutScope !== "undefined") closePopout();
+                                        } else {
+                                            root.changeDuration(targetVal);
                                         }
+                                    } else {
+                                        root.activateCaffeine(targetVal);
+                                        if (typeof popoutScope !== "undefined") closePopout();
                                     }
                                 }
                             }
@@ -510,21 +843,21 @@ PluginComponent {
                                 font.pixelSize: Theme.fontSizeMedium
                                 font.weight: isSelected ? Font.Bold : Font.Normal
                                 anchors.centerIn: parent
-                                Behavior on color { ColorAnimation { duration: 150 } }
+                                Behavior on color { ColorAnimation { duration: 200 } }
                             }
 
                             Keys.onReturnPressed: event => {
-                                if (typeof popoutScope !== 'undefined') {
-                                    popoutScope.currentIndex = index
-                                    root.changeDuration(modelData.value)
-                                    event.accepted = true
+                                if (typeof popoutScope !== "undefined") {
+                                    popoutScope.currentIndex = index;
+                                    root.changeDuration(modelData.value);
+                                    event.accepted = true;
                                 }
                             }
                             Keys.onSpacePressed: event => {
-                                if (typeof popoutScope !== 'undefined') {
-                                    popoutScope.currentIndex = index
-                                    root.changeDuration(modelData.value)
-                                    event.accepted = true
+                                if (typeof popoutScope !== "undefined") {
+                                    popoutScope.currentIndex = index;
+                                    root.changeDuration(modelData.value);
+                                    event.accepted = true;
                                 }
                             }
                         }
@@ -595,16 +928,17 @@ PluginComponent {
                 bottomPadding: 2
                 spacing: Theme.spacingM
 
-                // --- Caffeine Header Card ---
+                // --- Live Widget Android-Style Notification Card OR Standard Header ---
                 Loader {
                     width: parent.width
-                    sourceComponent: caffeineHeaderComponent
+                    sourceComponent: root.isStatusWidgetVariant ? liveNotificationCardComponent : caffeineHeaderComponent
                 }
 
-                // --- Duration Grid Section ---
+                // --- Duration Grid Section (Standard Widget only) ---
                 Loader {
                     width: parent.width
-                    sourceComponent: durationGridComponent
+                    visible: !root.isStatusWidgetVariant
+                    sourceComponent: root.isStatusWidgetVariant ? null : durationGridComponent
                 }
             }
         }
@@ -620,8 +954,13 @@ PluginComponent {
         repeat: true
         running: false
         onTriggered: {
-            globalTimeLeft.set(globalTimeLeft.value - 1);
-            if (globalTimeLeft.value <= 0) {
+            if (root.selectedDuration === "infinity") {
+                countdownTimer.stop();
+                return;
+            }
+            const nextVal = globalTimeLeft.value - 1;
+            globalTimeLeft.set(Math.max(0, nextVal));
+            if (nextVal <= 0) {
                 countdownTimer.stop();
                 deactivateCaffeine();
             }
@@ -641,59 +980,146 @@ PluginComponent {
         return hrs.toFixed(1).replace(".0", "") + " " + I18n.tr("hours");
     }
 
-    function deactivateCaffeine() {
+    function deactivateCaffeine(silent) {
         countdownTimer.stop();
         globalTimeLeft.set(0);
+        globalTotalDuration.set(0);
+        var defDur = getDefaultConfiguredDuration();
+        
+        selectedDuration = defDur;
+        globalSelectedDuration.set(defDur);
+
         if (pluginService) {
             pluginService.savePluginState(pluginId, "expiration", 0);
+            pluginService.savePluginState(pluginId, "totalDuration", 0);
         }
         if (typeof SessionService !== "undefined" && SessionService.disableIdleInhibit) {
             SessionService.disableIdleInhibit();
         }
-        if (showToasts && typeof ToastService !== "undefined") {
+        if (!silent && showToasts && typeof ToastService !== "undefined") {
             ToastService.showInfo(I18n.tr("Screen sleep is now allowed."));
+        }
+        if (!silent && customOsd) {
+            customOsd.triggerTurnOffOSD();
         }
     }
 
-    function activateCaffeine(targetDuration) {
+    function activateCaffeine(targetDuration, silentToast) {
+        selectedDuration = targetDuration;
+        globalSelectedDuration.set(targetDuration);
+        if (pluginService) {
+            pluginService.savePluginData(pluginId, "selectedDuration", targetDuration);
+        }
         let durationMinutes = 0;
         if (targetDuration !== "infinity") {
             const durationSecs = parseInt(targetDuration);
             durationMinutes = Math.round(durationSecs / 60);
             globalTimeLeft.set(durationSecs);
+            globalTotalDuration.set(durationSecs);
             const expiration = Date.now() + durationSecs * 1000;
             if (pluginService) {
                 pluginService.savePluginState(pluginId, "expiration", expiration);
+                pluginService.savePluginState(pluginId, "totalDuration", durationSecs);
             }
             countdownTimer.restart();
         } else {
+            countdownTimer.stop();
             globalTimeLeft.set(0);
+            globalTotalDuration.set(0);
             if (pluginService) {
                 pluginService.savePluginState(pluginId, "expiration", 0);
+                pluginService.savePluginState(pluginId, "totalDuration", 0);
             }
-            countdownTimer.stop();
         }
 
         if (typeof SessionService !== "undefined" && SessionService.enableIdleInhibit) {
-            SessionService.enableIdleInhibit(durationMinutes);
+            SessionService.enableIdleInhibit(durationMinutes > 0 ? durationMinutes : 0);
         }
         
-        if (showToasts && typeof ToastService !== "undefined") {
-            ToastService.showInfo(targetDuration === "infinity" ? I18n.tr("Screen will stay awake.") : I18n.tr("Screen will stay awake for ") + formatDurationLabel(targetDuration) + ".");
+        if (!silentToast && showToasts && typeof ToastService !== "undefined") {
+            ToastService.showInfo(targetDuration === "infinity" ? I18n.tr("Screen will stay awake indefinitely.") : I18n.tr("Screen will stay awake for ") + formatDurationLabel(targetDuration) + ".");
+        }
+        if (customOsd) {
+            customOsd.triggerOSD(targetDuration);
         }
     }
 
-    function changeDuration(newDuration) {
+    function extendCaffeine(extraSeconds) {
+        if (!caffeineActive) {
+            activateCaffeine(extraSeconds.toString());
+            return;
+        }
+
+        const currentSecs = (selectedDuration === "infinity") ? 0 : root.timeLeft;
+        const newSecs = Math.max(0, currentSecs + extraSeconds);
+        const newTotal = (selectedDuration === "infinity") ? newSecs : Math.max(root.totalDuration + extraSeconds, newSecs);
+        const durationMinutes = Math.round(newSecs / 60);
+
+        selectedDuration = newSecs.toString();
+        globalSelectedDuration.set(newSecs.toString());
+        globalTimeLeft.set(newSecs);
+        globalTotalDuration.set(newTotal);
+        const expiration = Date.now() + newSecs * 1000;
+        if (pluginService) {
+            pluginService.savePluginState(pluginId, "expiration", expiration);
+            pluginService.savePluginState(pluginId, "totalDuration", newTotal);
+        }
+        countdownTimer.restart();
+
+        if (typeof SessionService !== "undefined" && SessionService.enableIdleInhibit) {
+            SessionService.enableIdleInhibit(durationMinutes > 0 ? durationMinutes : 0);
+        }
+
+        if (showToasts && typeof ToastService !== "undefined") {
+            ToastService.showInfo(I18n.tr("Extended stay awake by %1 minutes.").arg(Math.round(extraSeconds / 60)));
+        }
+        if (customOsd) {
+            customOsd.triggerOSD(newSecs.toString());
+        }
+    }
+
+    function changeDuration(newDuration, fromLivePopup) {
         if (newDuration === undefined || newDuration === null || newDuration === "undefined" || newDuration === "") return;
         selectedDuration = newDuration;
+        
+        globalSelectedDuration.set(newDuration);
         if (pluginService) {
             pluginService.savePluginData(pluginId, "selectedDuration", newDuration);
         }
 
         if (caffeineActive) {
-            activateCaffeine(newDuration);
+            // When switching durations while active, cycle inhibition cleanly without turning off
+            let durationMinutes = 0;
+            if (newDuration !== "infinity") {
+                const durationSecs = parseInt(newDuration);
+                durationMinutes = Math.round(durationSecs / 60);
+                globalTimeLeft.set(durationSecs);
+                globalTotalDuration.set(durationSecs);
+                const expiration = Date.now() + durationSecs * 1000;
+                if (pluginService) {
+                    pluginService.savePluginState(pluginId, "expiration", expiration);
+                    pluginService.savePluginState(pluginId, "totalDuration", durationSecs);
+                }
+                countdownTimer.restart();
+            } else {
+                countdownTimer.stop();
+                globalTimeLeft.set(0);
+                globalTotalDuration.set(0);
+                if (pluginService) {
+                    pluginService.savePluginState(pluginId, "expiration", 0);
+                    pluginService.savePluginState(pluginId, "totalDuration", 0);
+                }
+            }
+
+            if (typeof SessionService !== "undefined" && SessionService.enableIdleInhibit) {
+                SessionService.enableIdleInhibit(durationMinutes > 0 ? durationMinutes : 0);
+            }
+
             if (showToasts && typeof ToastService !== "undefined") {
                 ToastService.showInfo(I18n.tr("Duration updated: stay awake for ") + formatDurationLabel(newDuration) + ".");
+            }
+            if (customOsd) {
+                customOsd.triggerOSD(newDuration);
             }
         }
     }
@@ -717,31 +1143,32 @@ PluginComponent {
             }
         }
 
-        var targetDuration = duration !== undefined ? duration : selectedDuration;
+        if (root.caffeineActive) {
+            deactivateCaffeine();
+            return;
+        }
 
-        if (isDefaultTrigger === true && defDur !== "cycle" && !root.caffeineActive) {
-            var actualDefault = "infinity";
-            if (defDur !== "infinity" && defDur !== "infinite" && defDur !== "inf" && defDur !== "") {
+        // When turning on:
+        var targetDuration;
+        if (duration !== undefined) {
+            targetDuration = duration;
+        } else {
+            // Clicking turn on from normal widget or right-click without explicit preset:
+            // Always use default duration, except when cycle mode is selected (in cycle mode, start at 5 minutes / 300s).
+            if (defDur === "cycle") {
+                targetDuration = "300"; // 5 minutes
+            } else if (defDur === "infinity" || defDur === "infinite" || defDur === "inf" || defDur === "") {
+                targetDuration = "infinity";
+            } else {
                 var mins = parseInt(defDur);
-                if (!isNaN(mins) && mins > 0) actualDefault = (mins * 60).toString();
-            }
-            targetDuration = actualDefault;
-        } else if (isDefaultTrigger === true && defDur === "cycle" && !root.caffeineActive) {
-            targetDuration = durationOptions.length > 0 ? durationOptions[0].value : "infinity";
-            selectedDuration = targetDuration;
-            if (pluginService) {
-                pluginService.savePluginData(pluginId, "selectedDuration", targetDuration);
+                targetDuration = (!isNaN(mins) && mins > 0) ? (mins * 60).toString() : "infinity";
             }
         }
 
         if (targetDuration === undefined || targetDuration === null || targetDuration === "undefined" || targetDuration === "") {
             targetDuration = "infinity";
         }
-        if (root.caffeineActive) {
-            deactivateCaffeine();
-        } else {
-            activateCaffeine(targetDuration);
-        }
+        activateCaffeine(targetDuration);
     }
 
     ccDetailContent: Component {
@@ -772,5 +1199,11 @@ PluginComponent {
                 }
             }
         }
+    }
+
+    // Custom On-Screen Display (OSD)
+    CaffeineOSD {
+        id: customOsd
+        rootPlugin: root
     }
 }

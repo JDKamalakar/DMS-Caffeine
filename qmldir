@@ -1,0 +1,6 @@
+module DMS_Caffeine
+CaffeineWidget 1.0 CaffeineWidget.qml
+CaffeineSettings 1.0 CaffeineSettings.qml
+LiveCaffeinePopout 1.0 LiveCaffeinePopout.qml
+CaffeineWaveProgress 1.0 CaffeineWaveProgress.qml
+CaffeineOSD 1.0 CaffeineOSD.qml
